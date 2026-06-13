@@ -169,6 +169,41 @@ async fn game_boost(game: String) -> Result<Value, String> {
     Ok(report)
 }
 
+/// OPTIMISATION ADAPTATIVE — jeu actuellement lancé (ou None).
+#[tauri::command]
+fn active_game() -> Option<&'static str> {
+    hardware::detect_running_game()
+}
+
+/// Détail du profil recommandé pour un jeu (tweaks + priorité + explication),
+/// sans rien appliquer : sert à montrer ce qui sera fait avant validation.
+#[tauri::command]
+fn game_profile(game: String) -> Result<Value, String> {
+    optimizations::profile_for(&game)
+        .and_then(|p| serde_json::to_value(p).ok())
+        .ok_or_else(|| "profil de jeu inconnu".to_string())
+}
+
+/// Applique le profil adaptatif d'un jeu : point de restauration AVANT, tweaks
+/// réversibles (filtrés selon la licence) + priorité CPU. Tout est journalisé.
+#[tauri::command]
+async fn apply_game_profile(game: String) -> Result<Value, String> {
+    if integrity::is_blacklisted() {
+        return Err("Ce poste est bloqué.".into());
+    }
+    let pro = license::current_status().is_some();
+    let mut journal = safety::Journal::load().map_err(|e| e.to_string())?;
+    safety::create_restore_point("PulseBoost — profil de jeu")
+        .await
+        .map_err(|e| format!("Point de restauration impossible, rien n'a été modifié : {e}"))?;
+    let report = optimizations::apply_profile(&game, pro, &mut journal)
+        .await
+        .map_err(|e| e.to_string())?;
+    journal.save().map_err(|e| e.to_string())?;
+    let _ = telemetry::event("game_profile_applied", Some(&game)).await;
+    Ok(report)
+}
+
 /// Journal lisible de TOUT ce qui a été modifié (transparence totale).
 #[tauri::command]
 fn change_log() -> Result<Value, String> {
@@ -189,6 +224,9 @@ fn main() {
             health_score,
             ai_analysis,
             game_boost,
+            active_game,
+            game_profile,
+            apply_game_profile,
             change_log,
             security_gate,
             discord_login,

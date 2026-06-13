@@ -15,6 +15,7 @@
 
 import express from "express";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +30,11 @@ const PUBLIC_URL = process.env.PUBLIC_URL ?? "http://localhost:8787";
 const ADMIN_IDS = (process.env.ADMIN_DISCORD_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 // --- Base de donnees ---
-const db = new Database(path.join(__dirname, "pulseboost.db"));
+// DATA_DIR permet de placer la base sur un disque persistant (utile sur un
+// hebergeur de bots Node ou le filesystem applicatif peut etre ephemere).
+const DATA_DIR = process.env.DATA_DIR ?? __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const db = new Database(path.join(DATA_DIR, "pulseboost.db"));
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -235,12 +240,25 @@ app.post("/v1/churn_feedback", (req, res) => {
 });
 
 // --- ANALYSE IA (feature Pro 100% serveur = incrackable par nature) ---
+// Fournisseur : Google Gemini. La cle reste cote serveur, jamais dans le .exe.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
 const AI_SYSTEM_PROMPT = `Tu es l'analyste integre d'un logiciel d'optimisation PC pour gamers Windows (FiveM, Fortnite, Valorant, CS2, Warzone).
 REGLES STRICTES :
 - Tu recois un scan hardware + un score deja calcule localement. Tu EXPLIQUES, tu n'inventes pas de chiffres.
 - Jamais de promesse de FPS chiffree : utilise "faible / moyen / variable selon ta config".
+- Le scan peut contenir "running_game" (jeu lance) et "games" (jeux installes) : ADAPTE tes conseils
+  au jeu joue (ex. competitif comme Valorant/CS2 -> priorite latence/reseau ; FiveM -> CPU + reseau).
 - Ton : direct, sympa, niveau debutant, tutoiement.
 - Reponds UNIQUEMENT en JSON valide : { "resume": "...", "recommandations": [{ "id","titre","pourquoi","priorite","impact" }], "limite_materielle": "string|null" }`;
+
+// Petit util : extrait un objet JSON meme si le modele l'enrobe de texte/markdown.
+function parseJsonLoose(text) {
+  const cleaned = String(text ?? "").replace(/```json|```/g, "").trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const a = cleaned.indexOf("{"), b = cleaned.lastIndexOf("}");
+  if (a >= 0 && b > a) return JSON.parse(cleaned.slice(a, b + 1));
+  throw new Error("reponse IA non parsable");
+}
 
 app.post("/v1/analyze", async (req, res) => {
   const ss = readSession(req.body.session);
@@ -251,24 +269,30 @@ app.post("/v1/analyze", async (req, res) => {
   const aiFlag = db.prepare("SELECT enabled FROM flags WHERE name='ai_analysis'").get()?.enabled === 1;
   if (!active || !aiFlag) return res.status(403).json({ error: "analyse IA reservee aux abonnes Pro actifs" });
   if (!req.body.scan) return res.status(400).json({ error: "scan manquant" });
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(502).json({ error: "IA non configuree (ANTHROPIC_API_KEY)" });
+  if (!process.env.GEMINI_API_KEY) return res.status(502).json({ error: "IA non configuree (GEMINI_API_KEY)" });
 
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1200,
-        system: AI_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: `Locale: ${req.body.locale ?? "fr"}\nScan PC: ${JSON.stringify(req.body.scan)}` }],
-      }),
-    });
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
+          contents: [{ role: "user", parts: [{ text: `Locale: ${req.body.locale ?? "fr"}\nScan PC: ${JSON.stringify(req.body.scan)}` }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 1200, responseMimeType: "application/json" },
+        }),
+      }
+    );
     const data = await r.json();
-    const text = (data.content ?? []).map((b) => b.text ?? "").join("");
-    res.json(JSON.parse(text.replace(/```json|```/g, "").trim()));
+    if (!r.ok) { console.error("[gemini]", r.status, JSON.stringify(data).slice(0, 400)); return res.status(502).json({ error: "analyse indisponible" }); }
+    const text = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+    const out = parseJsonLoose(text);
+    db.prepare("INSERT INTO events (discord_id,hwid,type,detail) VALUES (?,?,?,?)")
+      .run(ss.id, String(req.body.hwid ?? ""), "ai_analysis", GEMINI_MODEL);
+    res.json(out);
   } catch (e) {
-    console.error(e);
+    console.error("[analyze]", e);
     res.status(502).json({ error: "analyse indisponible" });
   }
 });

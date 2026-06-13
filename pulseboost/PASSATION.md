@@ -28,7 +28,7 @@ toute action). Le marché est plein d'arnaques ; la crédibilité est le produit
 
 La conception a évolué en plusieurs pivots. Les décisions importantes :
 
-1. **Clé API Anthropic jamais dans le .exe** → toute l'IA passe par le serveur.
+1. **Clé API Gemini jamais dans le .exe** → toute l'IA passe par le serveur.
 2. **Pas de promesses de FPS chiffrées** → impact annoncé « faible / moyen / variable ».
    Le score est calculé **localement et déterministiquement** ; l'IA l'explique, ne l'invente pas.
 3. **Login = OAuth Discord** (scope `identify`), pas une saisie de clé au login.
@@ -154,9 +154,14 @@ LICENSE_PRIVATE_KEY=<hex, depuis keygen.js>   # Ed25519, NE JAMAIS COMMIT
 ADMIN_DISCORD_IDS=123,456                      # IDs Discord autorisés sur le panel
 DISCORD_BOT_TOKEN=...                           # effecteur (DM, rôles, logs)
 DISCORD_GUILD_ID=..., DISCORD_PRO_ROLE_ID=..., DISCORD_LOG_CHANNEL_ID=...
-ANTHROPIC_API_KEY=sk-ant-...                    # analyse IA
+GEMINI_API_KEY=...                              # analyse IA (Google Gemini)
+GEMINI_MODEL=gemini-2.0-flash                   # modèle Gemini (optionnel)
+DATA_DIR=./data                                 # disque persistant pour la base SQLite
 PORT=8787
 ```
+
+> Déploiement serveur + effecteur Discord sur **un seul process Node** : voir
+> `server/HOSTING.md` (hébergeur de bots Node, `npm start`, env, disque persistant).
 
 Portail Discord → OAuth2 Redirects : `PUBLIC_URL/auth/callback` **et**
 `PUBLIC_URL/admin/callback`. Le bot a besoin de *Manage Roles*, son rôle **au-dessus** du
@@ -189,6 +194,13 @@ npm run tauri build      # installeur NSIS dans src-tauri/target/release/bundle
 ---
 
 ## 9. Roadmap — ce qui RESTE à faire
+
+> Ajouts récents (FAIT) : **analyse IA migrée vers Google Gemini** (`/v1/analyze`,
+> `GEMINI_API_KEY`) ; **optimisation adaptative par jeu** (`active_game` /
+> `game_profile` / `apply_game_profile` côté Rust, carte dédiée + case "Auto"
+> côté UI — profil = priorité CPU + tweaks réseau/latence adaptés au jeu joué) ;
+> **packaging serveur+effecteur pour un hébergeur Node** (`server/HOSTING.md`,
+> `Dockerfile`, `.env.example`, `DATA_DIR` persistant). Refonte UI : `REDESIGN.md`.
 
 Priorité haute :
 - **Paiement** (Stripe/PayPal) → webhook qui appelle `/admin/api/keys` et DM la clé

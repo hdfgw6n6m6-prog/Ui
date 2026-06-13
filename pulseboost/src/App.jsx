@@ -60,8 +60,12 @@ export default function App() {
   const [telemetry, setTelemetry] = useState(false);
   const [churnOpen, setChurnOpen] = useState(false);
   const [optView, setOptView] = useState("reco"); // reco | avance
+  const [activeGame, setActiveGame] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [autoAdapt, setAutoAdapt] = useState(() => localStorage.getItem("pb_auto_adaptive") === "1");
   const isPro = pro;
   const toastTimer = useRef(null);
+  const lastAutoGame = useRef(null);
 
   const notify = (msg) => {
     setToast(msg);
@@ -192,6 +196,52 @@ export default function App() {
         : `${game} ne tourne pas encore — lance le jeu puis réessaie.`);
     } catch (e) { notify(String(e)); }
   };
+
+  const applyGameProfile = async (game) => {
+    setBusy(true);
+    try {
+      const r = await invoke("apply_game_profile", { game });
+      const n = r.applied?.length ?? 0;
+      const skipped = r.skipped_pro?.length ?? 0;
+      notify(`Profil ${game} appliqué : ${n} réglage(s) adapté(s)${skipped ? `, ${skipped} en Pro` : ""}. Réversible à tout moment.`);
+      await refreshTweaks();
+      setHealth(await invoke("health_score"));
+    } catch (e) { notify(String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const toggleAutoAdapt = () => {
+    const v = !autoAdapt; setAutoAdapt(v);
+    localStorage.setItem("pb_auto_adaptive", v ? "1" : "0");
+    if (v) notify("Mode adaptatif automatique activé : le profil s'appliquera au lancement d'un jeu.");
+  };
+
+  // Détection du jeu lancé + chargement de son profil (optimisation adaptative).
+  useEffect(() => {
+    if (gate.state !== "ok") return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const g = await invoke("active_game");
+        if (stop) return;
+        setActiveGame(g ?? null);
+        if (g) {
+          try { setProfile(await invoke("game_profile", { game: g })); } catch {}
+        } else { setProfile(null); lastAutoGame.current = null; }
+      } catch {}
+    };
+    tick();
+    const iv = setInterval(tick, 5000);
+    return () => { stop = true; clearInterval(iv); };
+  }, [gate.state]);
+
+  // Mode automatique : applique le profil une fois par session de jeu.
+  useEffect(() => {
+    if (!autoAdapt || !activeGame || busy || !tweaks.length) return;
+    if (lastAutoGame.current === activeGame) return;
+    lastAutoGame.current = activeGame;
+    applyGameProfile(activeGame);
+  }, [autoAdapt, activeGame, tweaks.length]);
 
   const toggleTelemetry = async () => {
     const v = !telemetry; setTelemetry(v);
@@ -344,6 +394,17 @@ export default function App() {
                 </div>
               </div>
 
+              <AdaptiveCard
+                activeGame={activeGame}
+                profile={profile}
+                tweaks={tweaks}
+                autoAdapt={autoAdapt}
+                onToggleAuto={toggleAutoAdapt}
+                onApply={applyGameProfile}
+                busy={busy}
+                isPro={isPro}
+              />
+
               <div className="card">
                 <div className="card-head"><h2>Game Boost</h2></div>
                 <p className="lead">Lance ton jeu puis booste-le : priorité CPU haute, restaurée automatiquement à la fermeture.</p>
@@ -487,6 +548,55 @@ export default function App() {
 
       {churnOpen && <ChurnSurvey onSubmit={sendChurn} onClose={() => setChurnOpen(false)} />}
       {toast && <div className="toast"><IconCheck /> {toast}</div>}
+    </div>
+  );
+}
+
+// Optimisation adaptative : détecte le jeu lancé et propose (ou applique) le
+// profil adapté. Le comportement auto/validation est piloté par une case à cocher.
+function AdaptiveCard({ activeGame, profile, tweaks, autoAdapt, onToggleAuto, onApply, busy, isPro }) {
+  const labelOf = (id) => tweaks.find((t) => t.id === id)?.label ?? id;
+  return (
+    <div className="card adaptive">
+      <div className="row-between">
+        <div>
+          <h2>Optimisation adaptative</h2>
+          <p className="lead">Le profil s'adapte au jeu que tu lances (priorité CPU, latence réseau…). Sûr et réversible.</p>
+        </div>
+        <label className="auto-toggle">
+          <span>Auto</span>
+          <span className="switch">
+            <input type="checkbox" checked={autoAdapt} onChange={onToggleAuto} />
+            <span className="slider" />
+          </span>
+        </label>
+      </div>
+
+      {activeGame ? (
+        <div className="adaptive-live">
+          <div className="adaptive-head">
+            <span className="game-dot" />
+            <b>{activeGame}</b> détecté
+            <span className="prio-pill">priorité {profile?.priority ?? "High"}</span>
+          </div>
+          {profile?.summary && <p className="muted" style={{ margin: "8px 0" }}>{profile.summary}</p>}
+          {profile?.tweaks?.length > 0 && (
+            <div className="profile-tags">
+              {profile.tweaks.map((id) => {
+                const isProTweak = !isPro && !["power_plan_high_perf","disable_game_dvr","enable_game_mode","visual_effects_performance","disable_startup_delay","startup_report","clean_temp_files"].includes(id);
+                return <span key={id} className={"ptag" + (isProTweak ? " pro" : "")}>{labelOf(id)}{isProTweak && " · Pro"}</span>;
+              })}
+            </div>
+          )}
+          {autoAdapt
+            ? <p className="muted tiny" style={{ marginTop: 10 }}>Mode automatique actif — le profil s'applique au démarrage du jeu.</p>
+            : <button className="btn primary" style={{ marginTop: 12 }} onClick={() => onApply(activeGame)} disabled={busy}>
+                {busy ? <span className="spin" /> : <IconBolt />} Optimiser pour {activeGame}
+              </button>}
+        </div>
+      ) : (
+        <p className="muted" style={{ marginTop: 10 }}>Aucun jeu détecté pour l'instant. Lance ton jeu : PulseBoost reconnaîtra FiveM, Valorant, CS2, Fortnite, Warzone ou Apex et proposera le profil adapté.</p>
+      )}
     </div>
   );
 }

@@ -52,6 +52,9 @@ pub async fn full_scan() -> Result<Value> {
     // --- Jeux installés (Steam / Epic / FiveM / Rockstar) ---
     let games = detect_games();
 
+    // --- Jeu actuellement lancé (pour l'optimisation adaptative) ---
+    let running_game = detect_running_game();
+
     // --- Détection des "problèmes" connus ---
     let issues = detect_issues(ram_total_gb, &disks);
 
@@ -63,9 +66,38 @@ pub async fn full_scan() -> Result<Value> {
         "os": os_version,
         "top_processes": top_processes,
         "games": games,
+        "running_game": running_game,
         "issues": issues,
         "scanned_at": chrono::Utc::now().to_rfc3339(),
     }))
+}
+
+/// Détecte le jeu actuellement EN COURS d'exécution (par nom de process).
+/// Sert à l'optimisation adaptative : on adapte le profil au jeu joué.
+/// Renvoie le nom canonique du jeu ("FiveM", "Valorant"…) ou None.
+pub fn detect_running_game() -> Option<&'static str> {
+    // (jeu canonique, fragments de nom d'exécutable en minuscule)
+    const TABLE: &[(&str, &[&str])] = &[
+        ("FiveM", &["fivem"]),
+        ("Fortnite", &["fortniteclient-win64-shipping"]),
+        ("Valorant", &["valorant-win64-shipping", "valorant"]),
+        ("CS2", &["cs2"]),
+        ("Warzone", &["modernwarfare", "cod"]),
+        ("Apex Legends", &["r5apex"]),
+    ];
+    let mut sys = System::new();
+    sys.refresh_processes();
+    let names: Vec<String> = sys
+        .processes()
+        .values()
+        .map(|p| p.name().to_lowercase())
+        .collect();
+    for (game, keys) in TABLE {
+        if names.iter().any(|n| keys.iter().any(|k| n.contains(k))) {
+            return Some(game);
+        }
+    }
+    None
 }
 
 /// Stats légères pour le graphe temps réel.

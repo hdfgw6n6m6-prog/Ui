@@ -8,7 +8,8 @@ src-tauri/target/
 
 # Serveur
 server/node_modules/
-server/pulseboost.db
+server/pulseboost.db*
+server/data/
 
 # Secrets — ne jamais commit
 .env

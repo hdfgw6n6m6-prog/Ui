@@ -2,7 +2,13 @@
   "name": "pulseboost-server",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.js", "keygen": "node keygen.js" },
+  "main": "server.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "start:local": "node --env-file=.env server.js",
+    "keygen": "node keygen.js"
+  },
   "dependencies": {
     "express": "^4.19.0",
     "better-sqlite3": "^11.0.0"

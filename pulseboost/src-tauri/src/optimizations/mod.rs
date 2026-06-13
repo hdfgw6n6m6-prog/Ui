@@ -319,6 +319,101 @@ pub async fn rollback(journal: &mut Journal) -> Result<Value> {
     Ok(json!({ "reverted": reverted, "errors": errors }))
 }
 
+/// Un tweak est-il réservé au Pro ? (doit refléter `pro_only` dans `list_all`).
+pub fn tweak_is_pro(id: &TweakId) -> bool {
+    matches!(
+        id,
+        TweakId::DisableSysMain
+            | TweakId::TcpNoDelay
+            | TweakId::DisableMemCompression
+            | TweakId::HardwareGpuScheduling
+            | TweakId::DnsCloudflare
+            | TweakId::CleanPrefetch
+    )
+}
+
+/// Profil d'optimisation adapté à un jeu donné.
+#[derive(Serialize, Clone)]
+pub struct GameProfile {
+    pub game: String,
+    pub priority: String, // priorité CPU appliquée au process du jeu
+    pub summary: String,  // pourquoi ce profil (honnête, pas de FPS promis)
+    pub tweaks: Vec<TweakId>,
+}
+
+/// Profil RECOMMANDÉ par jeu : sélection de tweaks réversibles + priorité CPU,
+/// adaptée à ce que le jeu sollicite réellement (CPU mono-cœur, latence réseau,
+/// RAM…). Aucun chiffre de FPS promis : on adapte, on n'invente pas.
+pub fn profile_for(game: &str) -> Option<GameProfile> {
+    use TweakId::*;
+    let (priority, summary, tweaks): (&str, &str, Vec<TweakId>) = match game {
+        "FiveM" => (
+            "High",
+            "FiveM est très gourmand en CPU mono-cœur et sensible au réseau : priorité CPU haute + latence (Nagle) et DNS rapide.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay, DnsCloudflare],
+        ),
+        "Valorant" => (
+            "High",
+            "Compétitif : on privilégie la latence et le CPU, et on coupe l'enregistrement en arrière-plan.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay],
+        ),
+        "CS2" => (
+            "High",
+            "Compétitif Source 2 : latence réseau réduite + planification GPU matérielle.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay, HardwareGpuScheduling],
+        ),
+        "Fortnite" => (
+            "High",
+            "Gros moteur : CPU/GPU dégagés, planification GPU matérielle, effets Windows allégés.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, HardwareGpuScheduling, VisualEffectsPerformance],
+        ),
+        "Warzone" => (
+            "High",
+            "Très lourd en RAM et CPU : compression mémoire coupée (si ≥16 Go), planification GPU, anti-DVR.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, DisableMemCompression, HardwareGpuScheduling],
+        ),
+        "Apex Legends" => (
+            "High",
+            "FPS rapide : on réduit la latence réseau et on monte la priorité CPU.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay],
+        ),
+        _ => return None,
+    };
+    Some(GameProfile {
+        game: game.to_string(),
+        priority: priority.to_string(),
+        summary: summary.to_string(),
+        tweaks,
+    })
+}
+
+/// Applique le profil adaptatif d'un jeu : tweaks réversibles (filtrés selon la
+/// licence) puis priorité CPU du process. Le point de restauration est créé en
+/// amont par l'appelant (`main.rs`). Tout reste journalisé / réversible.
+pub async fn apply_profile(game: &str, pro: bool, journal: &mut Journal) -> Result<Value> {
+    let profile = profile_for(game).ok_or_else(|| anyhow::anyhow!("profil de jeu inconnu"))?;
+    let mut to_apply = vec![];
+    let mut skipped_pro = vec![];
+    for id in &profile.tweaks {
+        if tweak_is_pro(id) && !pro {
+            skipped_pro.push(format!("{id:?}"));
+        } else {
+            to_apply.push(id.clone());
+        }
+    }
+    let report = apply(&to_apply, journal).await?;
+    // Priorité CPU du jeu (best-effort : seulement si le jeu tourne déjà).
+    let prio = game_boost(game, journal).await.ok();
+    Ok(json!({
+        "game": game,
+        "summary": profile.summary,
+        "applied": report["applied"],
+        "failed": report["failed"],
+        "skipped_pro": skipped_pro,
+        "priority": prio.and_then(|v| v["priority"].as_str().map(String::from)),
+    }))
+}
+
 /// GAME BOOST : actions temporaires (non journalisées car restaurées à la fermeture du jeu).
 pub async fn game_boost(game: &str, _journal: &mut Journal) -> Result<Value> {
     let exe = match game {

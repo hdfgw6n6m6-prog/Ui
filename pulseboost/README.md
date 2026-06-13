@@ -10,7 +10,8 @@ src-tauri/          Backend Rust (scan, tweaks, sécurité, score, client IA)
   src/safety.rs     ⭐ Point de restauration + journal + rollback — le différenciateur
   src/optimizations Registre des tweaks, chacun avec son chemin de revert
 src/                Frontend React (dashboard, jauge, journal public)
-proxy/server.js     Serveur Node qui détient la clé API Anthropic
+server/server.js    Serveur Node (licence + effecteur Discord) qui détient la clé API Gemini
+server/HOSTING.md   Déploiement serveur + bot sur un seul hébergeur Node
 ```
 
 ## Build (sur une machine Windows)
@@ -26,8 +27,8 @@ L'app demande l'élévation admin via le manifeste NSIS `perMachine` (UAC propre
 
 ## ⚠️ Sécurité — à ne pas négliger
 
-1. **Jamais de clé API dans le .exe.** Le binaire appelle `proxy/server.js` (déployé sur votre
-   serveur), qui détient `ANTHROPIC_API_KEY`, vérifie la licence Pro et rate-limite.
+1. **Jamais de clé API dans le .exe.** Le binaire appelle `server/server.js` (déployé sur votre
+   serveur), qui détient `GEMINI_API_KEY`, vérifie la licence Pro et rate-limite.
 2. **Signature de code obligatoire** avant les pubs TikTok : certificat OV (~150 €/an) ou EV
    (réputation SmartScreen immédiate). Sans signature, Defender + SmartScreen bloqueront
    l'installeur et vos taux de conversion s'effondreront. Renseigner `certificateThumbprint`

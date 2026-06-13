@@ -1,8 +1,8 @@
-// ai.rs — analyse IA via TON serveur (la cle API Anthropic n'est JAMAIS dans le .exe).
+// ai.rs — analyse IA via TON serveur (la cle API Gemini n'est JAMAIS dans le .exe).
 //
 // Modele : l'app envoie la SESSION Discord + le HWID + le scan. Le serveur verifie
 // que le compte a un abonnement actif (et le feature flag ai_analysis) avant
-// d'appeler Anthropic. L'analyse est donc une feature 100% serveur : un binaire
+// d'appeler Google Gemini. L'analyse est donc une feature 100% serveur : un binaire
 // craque ne peut pas la produire.
 
 use crate::license;
