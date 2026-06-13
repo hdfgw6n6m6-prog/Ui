@@ -1,11 +1,14 @@
 # Héberger PulseBoost sur un hébergeur de bots Node (un seul VPS/instance)
 
-Le **serveur de licence** et **l'effecteur Discord** (DM, rôle Pro, logs) tournent
-dans **un seul process Node** (`server.js` importe `discord.js`). Tu n'as donc
-qu'**une seule chose à héberger** : ce dossier `server/`.
+Le **serveur de licence**, **l'effecteur Discord** (DM, rôle Pro, logs) et le **bot
+Discord** (commandes admin) tournent dans **un seul process Node** (`server.js`).
+Tu n'as donc qu'**une seule chose à héberger** : ce dossier `server/`.
 
-> L'effecteur Discord est en **REST pur** : pas de gateway, pas de slash command,
-> il n'écoute aucun message. Il ne fait qu'exécuter ce que le panel admin ordonne.
+> Configuration : tout se règle dans **`config.js`** (pas de `.env`). Les variables
+> d'environnement, si tu en définis, restent prioritaires sur `config.js`.
+>
+> Le bot Discord se connecte au gateway avec `intents:0` (il **ne lit aucun
+> message**) et n'exécute que des **slash commands réservées aux admins**.
 
 ---
 
@@ -28,8 +31,9 @@ La plupart des hébergeurs Node (type "bot hosting") fonctionnent ainsi :
 1. **Uploade** le dossier `server/` (ou connecte le dépôt Git, racine = `server/`).
 2. **Start command** : `npm start`  (équivaut à `node server.js`).
 3. **Version Node** : 20 ou plus (champ `engines` déjà fixé).
-4. **Variables d'environnement** : recopie celles de `.env.example` dans le
-   dashboard de l'hébergeur (voir §3). Ne pas uploader de `.env` en clair.
+4. **Configuration** : édite **`config.js`** (valeurs Discord, Gemini, secrets…).
+   Sur un dépôt PUBLIC, laisse les secrets vides dans `config.js` et mets-les
+   plutôt dans les variables d'environnement de l'hébergeur (elles sont prioritaires).
 5. **Disque persistant** : crée un volume persistant et pointe `DATA_DIR` dessus
    (ex. `/data`). ⚠️ Sans ça, la base SQLite (clés, comptes) est **remise à zéro**
    à chaque redéploiement sur les hébergeurs au filesystem éphémère.
@@ -51,12 +55,16 @@ npm run keygen      # affiche LICENSE_PRIVATE_KEY (hex) + la clé PUBLIQUE
 - Mets `LICENSE_PRIVATE_KEY` (hex) dans les variables d'environnement de l'hébergeur.
 - Copie la **clé publique** affichée dans `src-tauri/src/license.rs` → `VERIFY_KEY_HEX`.
 
-## 4. Variables d'environnement (rappel)
+## 4. Configuration (rappel)
 
-Voir `.env.example`. Les indispensables : `DISCORD_CLIENT_ID/SECRET`,
+Tout est dans **`config.js`**. Les indispensables : `DISCORD_CLIENT_ID/SECRET`,
 `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_PRO_ROLE_ID`, `PUBLIC_URL`,
 `SESSION_SECRET`, `LICENSE_PRIVATE_KEY`, `ADMIN_DISCORD_IDS`, `GEMINI_API_KEY`,
 et `DATA_DIR` (disque persistant).
+
+> Pour les **commandes admin du bot** : invite le bot avec le scope
+> `applications.commands` (en plus de `bot`), sinon les slash commands
+> n'apparaissent pas. Tape `/help` dans ton serveur pour vérifier.
 
 ## 5. Vérifier que tout marche
 
@@ -72,8 +80,8 @@ Un `Dockerfile` est fourni. Build/run :
 
 ```bash
 docker build -t pulseboost-server ./server
-docker run -p 8787:8787 --env-file server/.env -v pb_data:/data \
-  -e DATA_DIR=/data pulseboost-server
+docker run -p 8787:8787 -v pb_data:/data -e DATA_DIR=/data pulseboost-server
+# (édite config.js avant le build, ou passe les secrets en -e VAR=valeur)
 ```
 
 ## Mettre à jour

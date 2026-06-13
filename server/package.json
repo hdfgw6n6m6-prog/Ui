@@ -6,7 +6,6 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node server.js",
-    "start:local": "node --env-file=.env server.js",
     "keygen": "node keygen.js"
   },
   "dependencies": {

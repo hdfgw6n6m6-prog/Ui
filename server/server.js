@@ -14,6 +14,7 @@
 //   node keygen.js  (une fois)   puis   node server.js
 
 import express from "express";
+import "./config.js"; // charge la config (config.js) et peuple process.env
 import crypto from "node:crypto";
 import fs from "node:fs";
 import Database from "better-sqlite3";
