@@ -155,6 +155,50 @@ App desktop :
 
 ---
 
+## Mode TEST rapide (http, sans domaine ni HTTPS)
+
+⚠️ Le HTTP en clair est **pour tester uniquement** (clés/tokens passent en clair).
+Dès que de vrais joueurs l'utilisent → **HTTPS obligatoire** (voir §3 / `HOSTING.md`).
+Garde quand même `DATA_DIR` persistant pour ne pas reperdre tes clés à chaque test.
+
+Rappel : seul **le serveur** se host. L'app desktop se build sur Windows et se teste
+sur le même PC.
+
+### Route A — Tout en local (100% fiable, recommandé pour tester)
+Discord autorise `http://localhost` : aucune galère de certificat.
+1. Serveur sur ton PC :
+   ```bash
+   cd server && npm install && npm run keygen   # note les 2 clés
+   # crée server/.env avec au minimum :
+   #   PUBLIC_URL=http://localhost:8787
+   #   PORT=8787
+   #   DATA_DIR=./data
+   #   DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID,
+   #   DISCORD_PRO_ROLE_ID, SESSION_SECRET, LICENSE_PRIVATE_KEY, ADMIN_DISCORD_IDS,
+   #   GEMINI_API_KEY
+   npm run start:local
+   ```
+2. Discord → OAuth2 → Redirects, ajoute :
+   - `http://localhost:8787/auth/callback`
+   - `http://localhost:8787/admin/callback`
+3. App : dans `license.rs`, `ai.rs`, `telemetry.rs` mets `SERVER = "http://localhost:8787"`,
+   et `VERIFY_KEY_HEX` = clé publique du keygen. Puis `npm run tauri dev`.
+4. Teste : `http://localhost:8787/` → panel ; puis login + clé + IA + profil de jeu.
+
+### Route B — Sur ton bot host en http://IP (si Discord l'accepte)
+1. Serveur sur l'hébergeur, `PUBLIC_URL=http://TON_IP:PORT`, `DATA_DIR` persistant.
+2. Discord → Redirects : `http://TON_IP:PORT/auth/callback` **et** `…/admin/callback`.
+   - Si Discord **refuse d'enregistrer** ces URL en `http://` → tu DOIS passer en HTTPS
+     (DuckDNS + Caddy, ou Cloudflare Tunnel : §3 / `HOSTING.md`). Il n'y a pas de
+     contournement, c'est une règle de Discord.
+3. App : `SERVER = "http://TON_IP:PORT"` dans les 3 fichiers Rust, puis build/dev.
+
+> Ce que tu PEUX déjà tester sans OAuth, même en http://IP : le serveur démarre,
+> `GET /` répond, et les appels app→serveur fonctionnent une fois la session obtenue.
+> Mais la session vient du login Discord → si l'OAuth http distant est refusé, fais
+> la Route A en local pour valider toute la chaîne, puis ajoute le HTTPS pour la mise
+> en ligne.
+
 ## Dépannage rapide
 
 | Symptôme | Cause probable | Fix |
