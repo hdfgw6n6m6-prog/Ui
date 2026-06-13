@@ -376,10 +376,14 @@ app.get("/admin/callback", async (req, res) => {
     res.redirect("/panel");
   } catch (e) { console.error(e); res.status(500).send("Erreur OAuth admin"); }
 });
-function admin(req, res, next) {
+function readAdmin(req) {
   const cookie = (req.headers.cookie ?? "").split(";").map((c) => c.trim()).find((c) => c.startsWith("pb_admin="));
   const s = readSession(cookie?.slice("pb_admin=".length));
-  if (!s || s.kind !== "admin" || !ADMIN_IDS.includes(s.id)) return res.status(401).json({ error: "non authentifie" });
+  return s && s.kind === "admin" && ADMIN_IDS.includes(s.id) ? s : null;
+}
+function admin(req, res, next) {
+  const s = readAdmin(req);
+  if (!s) return res.status(401).json({ error: "non authentifie" });
   req.admin = s; next();
 }
 
@@ -559,7 +563,12 @@ app.post("/admin/api/blacklist", admin, (req, res) => {
 app.post("/admin/api/unblacklist", admin, (req, res) =>
   res.json({ removed: db.prepare("DELETE FROM blacklist WHERE hwid=?").run(req.body.hwid).changes }));
 
-app.get("/panel", admin, (req, res) => res.sendFile(path.join(__dirname, "public", "panel.html")));
+// Page panel : si pas connecté en admin -> on REDIRIGE vers le login Discord
+// (au lieu de renvoyer un JSON 401 dans le navigateur).
+app.get("/panel", (req, res) => {
+  if (!readAdmin(req)) return res.redirect("/admin/login");
+  res.sendFile(path.join(__dirname, "public", "panel.html"));
+});
 app.get("/", (req, res) => res.redirect("/admin/login"));
 
 app.listen(process.env.PORT ?? 8787, () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
