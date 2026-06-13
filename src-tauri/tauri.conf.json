@@ -29,8 +29,7 @@
     "icon": ["icons/icon.ico"],
     "windows": {
       "nsis": { "installMode": "perMachine", "languages": ["French"] },
-      "certificateThumbprint": null,
-      "_comment": "Renseigner certificateThumbprint avec votre certificat EV/OV de signature de code avant release publique."
+      "certificateThumbprint": null
     }
   }
 }

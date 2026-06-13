@@ -114,7 +114,7 @@ pub fn live_stats() -> Result<Value> {
     let cpu_temp = ps("(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -ErrorAction SilentlyContinue | Select -First 1).CurrentTemperature")
         .ok()
         .and_then(|v| v.parse::<f64>().ok())
-        .map(|deciK| (deciK / 10.0) - 273.15);
+        .map(|deci_k| (deci_k / 10.0) - 273.15);
     Ok(json!({ "cpu_pct": cpu, "ram_pct": ram_pct, "cpu_temp_c": cpu_temp }))
 }
 

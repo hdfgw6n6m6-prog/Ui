@@ -98,6 +98,8 @@ pub fn signature_valid() -> bool {
 
 /// Outils de crack notoires en cours d'execution (heuristique).
 /// ATTENTION faux positifs : Cheat Engine sert aussi a d'autres jeux. A ponderer.
+/// Non branche par defaut (cf. PASSATION) -> dead_code tolere volontairement.
+#[allow(dead_code)]
 pub fn cracker_tools_running() -> Vec<String> {
     let names = ["x64dbg", "x32dbg", "ollydbg", "ida64", "ida", "cheatengine",
                  "scylla", "dnSpy", "HxD", "Reflector"];

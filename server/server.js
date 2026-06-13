@@ -507,7 +507,7 @@ app.get("/admin/api/user", admin, (req, res) => {
   try {
     avatar = user.avatar
       ? `https://cdn.discordapp.com/avatars/${id}/${user.avatar}.${user.avatar.startsWith("a_") ? "gif" : "png"}?size=128`
-      : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(id) >> 22n) % 5n)}.png`;
+      : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(id) >> 22n) % 6n)}.png`;
   } catch { avatar = "https://cdn.discordapp.com/embed/avatars/0.png"; }
 
   // Connexions (logins) avec IP + adresses distinctes.
