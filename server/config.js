@@ -21,7 +21,13 @@ const config = {
   GEMINI_API_KEY: "",
   GEMINI_MODEL: "gemini-2.0-flash",
 
-  // --- Discord (OAuth + bot + effecteur + commandes admin) ---
+  // --- Panel admin ---
+  // Mot de passe du panel web : permet de se connecter SANS Discord OAuth
+  // (donc ça marche en http://IP, sans HTTPS). Laisse vide pour utiliser à la
+  // place le login Discord (qui, lui, exige du HTTPS).
+  ADMIN_PASSWORD: "",
+
+  // --- Discord (OAuth app + bot + effecteur + commandes admin) ---
   DISCORD_CLIENT_ID: "",
   DISCORD_CLIENT_SECRET: "",
   DISCORD_BOT_TOKEN: "",

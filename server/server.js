@@ -362,10 +362,44 @@ app.post("/v1/chat", async (req, res) => {
 });
 
 // --- PANEL ADMIN ---
-app.get("/admin/login", (req, res) => {
+// Page de login : mot de passe (marche en http/IP, sans Discord) si ADMIN_PASSWORD
+// est défini ; sinon, login Discord OAuth (qui exige du HTTPS).
+function loginPage(error) {
+  const discordBtn = process.env.DISCORD_CLIENT_ID
+    ? `<a class="alt" href="/admin/login?discord=1">ou se connecter avec Discord</a>` : "";
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PulseBoost — Admin</title>
+<style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0b0a12;color:#e9e6f2;font:15px/1.5 system-ui,Segoe UI,sans-serif}
+.box{background:#16131f;border:1px solid rgba(139,92,246,.2);border-radius:16px;padding:32px;width:320px;box-shadow:0 16px 50px rgba(0,0,0,.5)}
+h1{font-size:20px;margin:0 0 4px}.s{color:#8d87a3;font-size:13px;margin-bottom:18px}
+input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid rgba(139,92,246,.25);background:rgba(255,255,255,.04);color:#fff;font:inherit;margin-bottom:12px}
+button{width:100%;padding:12px;border:0;border-radius:10px;background:#8b5cf6;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.err{color:#f43f5e;font-size:13px;margin-bottom:10px}.alt{display:block;text-align:center;margin-top:14px;color:#8d87a3;font-size:13px;text-decoration:none}</style></head>
+<body><form class="box" method="post" action="/admin/auth">
+<h1>PulseBoost · Admin</h1><div class="s">Panneau d'administration</div>
+${error ? '<div class="err">Mot de passe incorrect.</div>' : ""}
+<input type="password" name="password" placeholder="Mot de passe admin" autofocus required>
+<button type="submit">Se connecter</button>${discordBtn}</form></body></html>`;
+}
+function discordLoginRedirect(res) {
   const state = Buffer.from(JSON.stringify({ admin: true })).toString("base64url");
   res.redirect(`https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}` +
     `&response_type=code&scope=identify&redirect_uri=${encodeURIComponent(PUBLIC_URL + "/admin/callback")}&state=${state}`);
+}
+app.get("/admin/login", (req, res) => {
+  if (process.env.ADMIN_PASSWORD && !req.query.discord) return res.send(loginPage(req.query.e));
+  if (!process.env.DISCORD_CLIENT_ID) return res.send(loginPage(req.query.e)); // rien d'autre de configuré
+  discordLoginRedirect(res);
+});
+// Login par mot de passe -> session admin "local" (compare en temps constant).
+app.post("/admin/auth", (req, res) => {
+  const real = process.env.ADMIN_PASSWORD ?? "";
+  const pw = String(req.body.password ?? "");
+  const h = (s) => crypto.createHash("sha256").update(s).digest();
+  const ok = real.length > 0 && crypto.timingSafeEqual(h(pw), h(real));
+  if (!ok) { log("admin_login_fail", { ip: req.ip }); return res.redirect("/admin/login?e=1"); }
+  const sess = makeSession({ kind: "admin", id: "local", name: "admin" }, 12 * 3600000);
+  res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`);
+  res.redirect("/panel");
 });
 app.get("/admin/callback", async (req, res) => {
   try {
@@ -379,7 +413,8 @@ app.get("/admin/callback", async (req, res) => {
 function readAdmin(req) {
   const cookie = (req.headers.cookie ?? "").split(";").map((c) => c.trim()).find((c) => c.startsWith("pb_admin="));
   const s = readSession(cookie?.slice("pb_admin=".length));
-  return s && s.kind === "admin" && ADMIN_IDS.includes(s.id) ? s : null;
+  // id "local" = connexion par mot de passe ; sinon admin Discord vérifié.
+  return s && s.kind === "admin" && (s.id === "local" || ADMIN_IDS.includes(s.id)) ? s : null;
 }
 function admin(req, res, next) {
   const s = readAdmin(req);
