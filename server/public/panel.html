@@ -216,7 +216,7 @@ async function loadChurn(){ const c=await api("/admin/api/churn");
   document.getElementById("churn-expiring").innerHTML = c.expiring.length? c.expiring.map(x=>`<tr>
     <td>${x.username||x.discord_id}</td><td>${x.plan}</td><td>${new Date(x.expires_at).toLocaleString("fr-FR")}</td>
     <td><button class="btn sm" onclick="dm('${x.discord_id}')">relancer en DM</button></td></tr>`).join("")
-    : '<tr><td colspan="4" class="muted">Personne n\\'expire bientôt.</td></tr>';
+    : '<tr><td colspan="4" class="muted">Personne n\'expire bientôt.</td></tr>';
   document.getElementById("churn-churned").innerHTML = c.churned.length? c.churned.map(x=>`<tr>
     <td>${x.username||x.discord_id}</td><td>${x.plan}</td><td>${new Date(x.expires_at).toLocaleString("fr-FR")}</td>
     <td><button class="btn sm" onclick="dm('${x.discord_id}')">offre retour</button></td></tr>`).join("")
@@ -224,29 +224,64 @@ async function loadChurn(){ const c=await api("/admin/api/churn");
   document.getElementById("churn-recent").innerHTML = c.recent.length? c.recent.map(r=>`<div class="alert info">
     <span><b>${r.username||"?"}</b> — ${r.reason} ${r.comment?`· <span class="muted">${r.comment}</span>`:""}</span>
     <span class="muted">${new Date(r.at).toLocaleDateString("fr-FR")}</span></div>`).join("")
-    : '<p class="muted">Aucun retour pour l\\'instant.</p>'; }
+    : '<p class="muted">Aucun retour pour l\'instant.</p>'; }
+
+// Formate une durée (ms) en "Xh Ym" / "Xm".
+function fmtDur(ms){ const m=Math.round((ms||0)/60000); if(m<1)return "< 1 min"; const h=Math.floor(m/60); return h?`${h} h ${m%60} min`:`${m} min`; }
+function dt(v){ return v?new Date(String(v).replace(" ","T")+"Z").toLocaleString("fr-FR"):"–"; }
 
 // analyse détaillée d'un client
 async function detail(id){ const d=await api("/admin/api/user?discord_id="+id);
-  const s=d.snapshot, hw=s?.hw||{};
+  const s=d.snapshot, hw=s?.hw||{}, u=d.user, us=d.usage||{};
   document.getElementById("modal-body").innerHTML = `
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${d.user.username||id}</h2>
-      <button class="btn sm" onclick="closeModal()">fermer</button></div>
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div class="row" style="gap:14px">
+        <img src="${d.avatar}" alt="" width="64" height="64" style="border-radius:14px;border:1px solid var(--line)"
+             onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" />
+        <div>
+          <h2 style="margin:0">${u.username||id} ${u.banned?'<span class="pill bad">banni</span>':''}</h2>
+          <div class="mono muted" style="font-size:12px">ID ${id}</div>
+          <div class="muted" style="font-size:12px">Compte vu depuis le ${dt(u.created_at)}</div>
+        </div>
+      </div>
+      <button class="btn sm" onclick="closeModal()">fermer</button>
+    </div>
+
+    <h2>Profil & utilisation</h2>
     <div class="kv">
       <span>Discord ID</span><b class="mono">${id}</b>
+      <span>Pseudo</span><b>${u.username||"–"}</b>
       <span>Plan actuel</span><b>${d.keys.find(k=>!k.revoked&&(!k.expires_at||new Date(k.expires_at)>new Date()))?.plan||"free"}</b>
+      <span>Temps d'utilisation (estimé)</span><b>${fmtDur(us.total_ms)}</b>
+      <span>Sessions</span><b>${us.sessions??0}</b>
+      <span>Jours actifs</span><b>${us.active_days??0}</b>
+      <span>Connexions (logins)</span><b>${us.logins??0}</b>
+      <span>Évènements</span><b>${us.total_events??0}</b>
+      <span>Première activité</span><b>${dt(us.first_seen)}</b>
+      <span>Dernière activité</span><b>${dt(us.last_seen)}</b>
+      <span>Dernière connexion</span><b>${dt(u.last_login)}</b>
       <span>Score PC</span><b>${s?.score??"–"}/100</b>
-      <span>Appareils</span><b>${d.devices.length}</b>
       <span>CPU</span><b>${hw.cpu?.name||"–"}</b>
       <span>GPU</span><b>${hw.gpu?.name||"–"}</b>
       <span>RAM</span><b>${hw.ram?.total_gb?hw.ram.total_gb+" GB":"–"}</b>
-      <span>Dernière analyse</span><b>${s?.last_seen?new Date(s.last_seen).toLocaleString("fr-FR"):"–"}</b>
     </div>
-    ${d.feedback.length?`<h2>Feedback désabonnement</h2>${d.feedback.map(f=>`<div class="alert warn"><span>${f.reason} — ${f.comment||""}</span><span class="muted">${new Date(f.at).toLocaleDateString("fr-FR")}</span></div>`).join("")}`:""}
+
+    <h2>Appareils (HWID) — ${d.devices.length}</h2>
+    <table><thead><tr><th>HWID</th><th>Étiquette</th><th>Première vue</th><th>Dernière vue</th></tr></thead><tbody>
+      ${d.devices.map(v=>`<tr><td class="mono" title="${v.hwid}">${(v.hwid||"").slice(0,24)}…</td><td>${v.label||"–"}</td><td>${dt(v.first_seen)}</td><td>${dt(v.last_seen)}</td></tr>`).join("")||'<tr><td colspan="4" class="muted">aucun appareil</td></tr>'}
+    </tbody></table>
+
+    <h2>Connexions & IP</h2>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">IP distinctes : ${d.ips&&d.ips.length?d.ips.map(i=>`<span class="mono">${i}</span>`).join(", "):"–"}</div>
+    <table><thead><tr><th>IP</th><th>Quand</th></tr></thead><tbody>
+      ${(d.connections||[]).map(c=>`<tr><td class="mono">${c.ip||"–"}</td><td>${dt(c.at)}</td></tr>`).join("")||'<tr><td colspan="2" class="muted">aucune connexion enregistrée</td></tr>'}
+    </tbody></table>
+
+    ${d.feedback.length?`<h2>Feedback désabonnement</h2>${d.feedback.map(f=>`<div class="alert warn"><span>${f.reason} — ${f.comment||""}</span><span class="muted">${dt(f.at)}</span></div>`).join("")}`:""}
     <h2>Clés</h2><table><thead><tr><th>Clé</th><th>Plan</th><th>Expire</th><th>État</th></tr></thead><tbody>
       ${d.keys.map(k=>`<tr><td class="mono">${k.key}</td><td>${k.plan}</td><td>${k.expires_at?new Date(k.expires_at).toLocaleDateString("fr-FR"):"–"}</td><td>${k.revoked?'<span class="pill bad">révoquée</span>':'<span class="pill ok">active</span>'}</td></tr>`).join("")||'<tr><td colspan="4" class="muted">aucune</td></tr>'}
     </tbody></table>
-    <h2>Activité récente</h2><div class="timeline">${d.events.map(e=>`<div><span class="mono muted">${new Date(e.at).toLocaleString("fr-FR")}</span> · ${e.type}${e.detail?" — "+e.detail:""}</div>`).join("")||'<p class="muted">aucun évènement</p>'}</div>
+    <h2>Activité récente</h2><div class="timeline">${d.events.map(e=>`<div><span class="mono muted">${dt(e.at)}</span> · ${e.type}${e.detail?" — "+e.detail:""}</div>`).join("")||'<p class="muted">aucun évènement</p>'}</div>
     <div class="row" style="margin-top:14px">
       <button class="btn sm" onclick="dm('${id}')">DM Discord</button>
       <button class="btn sm" onclick="role('${id}','add')">rôle Pro+</button>
@@ -298,7 +333,7 @@ async function unbind(key){ await api("/admin/api/unbind",{key}); loadKeys(); }
 // utilisateurs : accès complet (stop / commandes)
 async function loadUsers(){ USERS = await api("/admin/api/users");
   document.getElementById("u-rows").innerHTML = USERS.map(u=>`
-    <tr><td>${u.username||"–"} ${u.banned?'<span class="pill bad">banni</span>':''}</td>
+    <tr><td><span class="row" style="gap:8px"><img src="${u.avatar?`https://cdn.discordapp.com/avatars/${u.discord_id}/${u.avatar}.png?size=32`:'https://cdn.discordapp.com/embed/avatars/0.png'}" width="24" height="24" style="border-radius:50%" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"/>${u.username||"–"}</span> ${u.banned?'<span class="pill bad">banni</span>':''}</td>
     <td class="mono">${u.discord_id}</td><td>${u.plan?`<span class="pill ok">${u.plan}</span>`:'<span class="muted">free</span>'}</td>
     <td>${u.devices}</td><td>${u.last_login?new Date(u.last_login).toLocaleString("fr-FR"):"–"}</td>
     <td>

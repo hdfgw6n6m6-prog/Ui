@@ -501,7 +501,39 @@ app.get("/admin/api/user", admin, (req, res) => {
   const events = db.prepare("SELECT type,detail,at FROM events WHERE discord_id=? ORDER BY id DESC LIMIT 60").all(id);
   const feedback = db.prepare("SELECT reason,comment,at FROM feedback WHERE discord_id=? ORDER BY id DESC").all(id);
   if (snap?.hw) try { snap.hw = JSON.parse(snap.hw); } catch {}
-  res.json({ user, keys, devices, snapshot: snap, events, feedback });
+
+  // Avatar Discord (CDN). Animé si le hash commence par a_, sinon défaut Discord.
+  let avatar;
+  try {
+    avatar = user.avatar
+      ? `https://cdn.discordapp.com/avatars/${id}/${user.avatar}.${user.avatar.startsWith("a_") ? "gif" : "png"}?size=128`
+      : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(id) >> 22n) % 5n)}.png`;
+  } catch { avatar = "https://cdn.discordapp.com/embed/avatars/0.png"; }
+
+  // Connexions (logins) avec IP + adresses distinctes.
+  const connections = db.prepare("SELECT ip, at FROM logs WHERE discord_id=? AND type='login' ORDER BY id DESC LIMIT 50").all(id);
+  const ips = db.prepare("SELECT DISTINCT ip FROM logs WHERE discord_id=? AND ip IS NOT NULL ORDER BY id DESC LIMIT 30").all(id).map((r) => r.ip);
+
+  // Temps d'utilisation estimé : on regroupe les évènements en sessions
+  // (coupure > 30 min = nouvelle session) et on somme les durées.
+  const ts = db.prepare("SELECT at FROM events WHERE discord_id=? ORDER BY at ASC").all(id)
+    .map((r) => +new Date(String(r.at).replace(" ", "T") + "Z")).filter((n) => !isNaN(n));
+  const GAP = 30 * 60000, MIN = 2 * 60000;
+  let totalMs = 0, sessions = 0, start = null, last = null;
+  for (const t of ts) {
+    if (start === null) { start = last = t; sessions++; continue; }
+    if (t - last <= GAP) { last = t; }
+    else { totalMs += Math.max(last - start, MIN); start = last = t; sessions++; }
+  }
+  if (start !== null) totalMs += Math.max(last - start, MIN);
+  const agg = db.prepare(`SELECT COUNT(*) total, COUNT(DISTINCT date(at)) active_days,
+                                 MIN(at) first_at, MAX(at) last_at FROM events WHERE discord_id=?`).get(id);
+  const usage = {
+    total_ms: totalMs, sessions, total_events: agg.total, active_days: agg.active_days,
+    first_seen: agg.first_at, last_seen: agg.last_at, logins: connections.length,
+  };
+
+  res.json({ user, avatar, keys, devices, snapshot: snap, events, feedback, connections, ips, usage });
 });
 
 // Vue churn : qui expire bientot, qui a churn, raisons
