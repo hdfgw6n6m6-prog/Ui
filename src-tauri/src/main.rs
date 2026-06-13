@@ -151,6 +151,18 @@ async fn health_score() -> Result<Value, String> {
     Ok(score::compute(&scan))
 }
 
+/// ANALYSE GRATUITE (sans login, sans Pro, sans serveur) : estime un gain FPS
+/// potentiel en fourchette honnête à partir du scan local. Pas de chiffre garanti.
+#[tauri::command]
+async fn free_analysis() -> Result<Value, String> {
+    let scan = hardware::full_scan().await.map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "estimate": score::estimate_gain(&scan),
+        "health": score::compute(&scan),
+        "running_game": scan["running_game"],
+    }))
+}
+
 /// Analyse IA : envoie le scan au proxy (qui détient la clé API) et retourne
 /// recommandations + explications en langage naturel.
 #[tauri::command]
@@ -222,6 +234,7 @@ fn main() {
             apply_tweaks,
             rollback_all,
             health_score,
+            free_analysis,
             ai_analysis,
             game_boost,
             active_game,

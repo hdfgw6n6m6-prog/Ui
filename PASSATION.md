@@ -195,6 +195,13 @@ npm run tauri build      # installeur NSIS dans src-tauri/target/release/bundle
 
 ## 9. Roadmap — ce qui RESTE à faire
 
+> Ajouts récents v2 (FAIT) : **analyse GRATUITE locale** (`free_analysis` →
+> estimation d'un gain FPS en FOURCHETTE honnête « +X à +Y % », jamais garantie ;
+> carte dédiée côté UI) ; **7 optimisations gaming avancées réversibles**
+> (réactivité MMCSS, priorité 1er plan, MMCSS Games, bridage réseau levé,
+> accélération souris off, Power Throttling off, DiagTrack off) intégrées aux
+> profils par jeu et au 1-clic. Helpers `safety::set_registry_string` / `read_dword`.
+>
 > Ajouts récents (FAIT) : **analyse IA migrée vers Google Gemini** (`/v1/analyze`,
 > `GEMINI_API_KEY`) ; **optimisation adaptative par jeu** (`active_game` /
 > `game_profile` / `apply_game_profile` côté Rust, carte dédiée + case "Auto"

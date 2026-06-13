@@ -10,7 +10,7 @@ import LiveMonitor from "./components/LiveMonitor.jsx";
 import QuickMeasure from "./components/QuickMeasure.jsx";
 import {
   IconPulse, IconSliders, IconShield, IconBolt, IconCheck, IconUndo,
-  IconGem, IconWarn, IconDiscord,
+  IconGem, IconWarn, IconDiscord, IconGauge,
 } from "./components/Icons.jsx";
 
 const TIER_COLOR = { vert: "var(--ok)", orange: "var(--warn)", rouge: "var(--bad)" };
@@ -19,7 +19,7 @@ const TIER_LABEL = { vert: "Bon état", orange: "À optimiser", rouge: "Critique
 // Jeu de tweaks appliqués par "Optimiser en 1 clic" : sûrs, réversibles, à fort
 // rapport bénéfice/risque. Les sensibles (réseau, mémoire, HAGS, DNS) restent en
 // mode "Avancé", choisis manuellement.
-const ONE_CLICK_FREE = ["power_plan_high_perf", "disable_game_dvr", "enable_game_mode", "visual_effects_performance", "disable_startup_delay"];
+const ONE_CLICK_FREE = ["power_plan_high_perf", "disable_game_dvr", "enable_game_mode", "gaming_responsiveness", "foreground_boost", "visual_effects_performance", "disable_startup_delay"];
 const ONE_CLICK_PRO = ["disable_sysmain"];
 const RECOMMENDED = new Set([...ONE_CLICK_FREE, ...ONE_CLICK_PRO, "startup_report"]);
 
@@ -43,6 +43,8 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [ai, setAi] = useState(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [free, setFree] = useState(null);
+  const [freeBusy, setFreeBusy] = useState(false);
   const [tweaks, setTweaks] = useState([]);
   const [selected, setSelected] = useState([]);
   const [live, setLive] = useState({ cpu_pct: 0, ram_pct: 0, cpu_temp_c: null });
@@ -150,6 +152,13 @@ export default function App() {
     try { setAi(await invoke("ai_analysis", { scan, locale: "fr" })); }
     catch (e) { notify(String(e)); }
     finally { setAiBusy(false); }
+  };
+
+  const runFree = async () => {
+    setFreeBusy(true);
+    try { setFree(await invoke("free_analysis")); }
+    catch (e) { notify(String(e)); }
+    finally { setFreeBusy(false); }
   };
 
   const applyIds = async (ids) => {
@@ -354,9 +363,13 @@ export default function App() {
                       {busy ? <span className="spin" /> : <IconBolt />}
                       {busy ? "Optimisation…" : "Optimiser en 1 clic"}
                     </button>
-                    <button className="btn lg" onClick={runAi} disabled={aiBusy || !scan}>
+                    <button className="btn lg" onClick={runFree} disabled={freeBusy}>
+                      {freeBusy ? <span className="spin" /> : <IconGauge />}
+                      {freeBusy ? "Analyse…" : "Analyse gratuite"}
+                    </button>
+                    <button className="btn lg ghost" onClick={runAi} disabled={aiBusy || !scan} title={isPro ? "" : "Réservé au Pro"}>
                       {aiBusy ? <span className="spin" /> : <IconPulse />}
-                      {aiBusy ? "Analyse…" : "Analyse IA"}
+                      {aiBusy ? "Analyse…" : "Analyse IA"}{!isPro && <span className="mini-pro">Pro</span>}
                     </button>
                   </div>
                   {pendingOneClick > 0
@@ -364,6 +377,8 @@ export default function App() {
                     : <p className="muted tiny">Toutes les optimisations recommandées sont déjà actives.</p>}
                 </div>
               </div>
+
+              {free && <FreeAnalysisCard data={free} onOptimize={oneClick} busy={busy} pending={pendingOneClick} />}
 
               <TrustStrip />
 
@@ -597,6 +612,44 @@ function AdaptiveCard({ activeGame, profile, tweaks, autoAdapt, onToggleAuto, on
       ) : (
         <p className="muted" style={{ marginTop: 10 }}>Aucun jeu détecté pour l'instant. Lance ton jeu : PulseBoost reconnaîtra FiveM, Valorant, CS2, Fortnite, Warzone ou Apex et proposera le profil adapté.</p>
       )}
+    </div>
+  );
+}
+
+// Analyse gratuite : estimation locale d'un gain FPS en fourchette HONNÊTE.
+function FreeAnalysisCard({ data, onOptimize, busy, pending }) {
+  const e = data?.estimate;
+  if (!e) return null;
+  const tierColor = e.tier === "notable" ? "var(--ok)" : e.tier === "moyen" ? "var(--data)" : "var(--muted)";
+  return (
+    <div className="card free-card">
+      <div className="row-between">
+        <div>
+          <h2>Analyse gratuite</h2>
+          <p className="lead">{e.summary}</p>
+        </div>
+        <div className="fps-badge" style={{ borderColor: tierColor }}>
+          <span className="fps-k">Gain FPS estimé</span>
+          <b style={{ color: tierColor }}>+{e.fps_gain_min} à +{e.fps_gain_max}%</b>
+          <span className="fps-tier">{e.tier}</span>
+        </div>
+      </div>
+
+      <ul className="free-items">
+        {e.items?.map((it, i) => (
+          <li key={i}><span className="fi-gain">{it.gain}</span><span className="fi-label">{it.label}</span></li>
+        ))}
+      </ul>
+
+      {e.hardware_note && <p className="honest"><IconWarn /> {e.hardware_note}</p>}
+      <p className="muted tiny" style={{ marginTop: 6 }}>{e.disclaimer}</p>
+
+      <div className="row-between" style={{ marginTop: 14 }}>
+        <span className="muted tiny">{pending > 0 ? `${pending} réglage(s) recommandé(s) prêt(s).` : "Réglages recommandés déjà actifs."}</span>
+        <button className="btn primary" onClick={onOptimize} disabled={busy || pending === 0}>
+          {busy ? <span className="spin" /> : <IconBolt />} Réaliser ce gain (1 clic)
+        </button>
+      </div>
     </div>
   );
 }

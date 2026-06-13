@@ -212,6 +212,18 @@ nav { display: grid; gap: 3px; }
 .game .installed { font-size: 11px; color: var(--ok); display: inline-flex; align-items: center; gap: 5px; }
 .game .not { font-size: 11px; color: var(--muted-2); }
 
+/* --- Analyse gratuite (estimation FPS honnête) --- */
+.free-card { border-color: rgba(52, 211, 153, 0.22); background: radial-gradient(540px 240px at 95% 0%, rgba(52,211,153,0.07), transparent 70%), var(--panel); }
+.fps-badge { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); flex: 0 0 auto; }
+.fps-badge .fps-k { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.fps-badge b { font-family: "JetBrains Mono"; font-size: 26px; line-height: 1.1; }
+.fps-badge .fps-tier { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.free-items { list-style: none; display: grid; gap: 7px; margin: 14px 0 4px; }
+.free-items li { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--line-soft); }
+.fi-gain { font-family: "JetBrains Mono"; font-size: 12px; color: var(--ok); min-width: 96px; }
+.fi-label { font-size: 13.5px; }
+.mini-pro { font-size: 9px; font-weight: 700; color: var(--pulse-2); border: 1px solid var(--pulse); padding: 1px 5px; border-radius: 5px; margin-left: 4px; }
+
 /* --- Optimisation adaptative --- */
 .card.adaptive { border-color: rgba(34, 211, 238, 0.22); background: radial-gradient(520px 240px at 95% 0%, rgba(34,211,238,0.08), transparent 70%), var(--panel); }
 .auto-toggle { display: inline-flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); }

@@ -26,7 +26,22 @@ pub enum TweakId {
     VisualEffectsPerformance,
     CleanPrefetch,
     DisableStartupDelay,
+    // --- Réglages gaming avancés (réversibles) ---
+    GamingResponsiveness,
+    NetworkThrottlingOff,
+    GamesTaskPriority,
+    ForegroundBoost,
+    DisableMouseAccel,
+    DisablePowerThrottling,
+    DisableDiagTrack,
 }
+
+// Chemins registre réutilisés par les réglages gaming avancés.
+const MMCSS: &str = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile";
+const MMCSS_GAMES: &str = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks\\Games";
+const PRIORITY_CTRL: &str = "SYSTEM\\CurrentControlSet\\Control\\PriorityControl";
+const POWER_THROTTLING: &str = "SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling";
+const MOUSE_KEY: &str = "Control Panel\\Mouse";
 
 #[derive(Serialize, Clone)]
 pub struct TweakInfo {
@@ -172,7 +187,75 @@ pub async fn list_all() -> Result<Vec<TweakInfo>> {
             applied: ps("(Get-ItemProperty 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize' -Name StartupDelayInMSec -ErrorAction SilentlyContinue).StartupDelayInMSec").map(|v| v.trim() == "0").unwrap_or(false),
             description: "Retire le délai artificiel imposé aux programmes de démarrage.".into(),
         },
+        TweakInfo {
+            id: TweakId::GamingResponsiveness,
+            label: "Réactivité système → jeux (MMCSS)".into(),
+            category: "Gaming".into(),
+            impact: "faible à moyen".into(),
+            pro_only: false,
+            applied: safety::read_dword("HKLM", MMCSS, "SystemResponsiveness") == Some(0),
+            description: "Windows réserve 20% du CPU aux tâches de fond ; on le ramène à 0 pour rendre la main aux jeux.".into(),
+        },
+        TweakInfo {
+            id: TweakId::ForegroundBoost,
+            label: "Priorité au premier plan (le jeu)".into(),
+            category: "Gaming".into(),
+            impact: "faible à moyen".into(),
+            pro_only: false,
+            applied: safety::read_dword("HKLM", PRIORITY_CTRL, "Win32PrioritySeparation") == Some(0x26),
+            description: "Donne plus de temps CPU à l'application au premier plan (Win32PrioritySeparation).".into(),
+        },
+        TweakInfo {
+            id: TweakId::DisableMouseAccel,
+            label: "Désactiver l'accélération souris (visée brute)".into(),
+            category: "Gaming".into(),
+            impact: "précision de visée (pas de FPS)".into(),
+            pro_only: false,
+            applied: ps("Get-ItemPropertyValue 'HKCU:\\Control Panel\\Mouse' MouseSpeed -ErrorAction SilentlyContinue").map(|v| v.trim() == "0").unwrap_or(false),
+            description: "Coupe l'« amélioration de la précision du pointeur » pour une visée 1:1, prisée en FPS.".into(),
+        },
+        TweakInfo {
+            id: TweakId::NetworkThrottlingOff,
+            label: "Désactiver le bridage réseau (NetworkThrottlingIndex)".into(),
+            category: "Réseau".into(),
+            impact: "variable (multijoueur / audio)".into(),
+            pro_only: true,
+            applied: safety::read_dword("HKLM", MMCSS, "NetworkThrottlingIndex") == Some(0xFFFF_FFFF),
+            description: "Windows limite le réseau pour le multimédia ; on lève cette limite (utile en multijoueur).".into(),
+        },
+        TweakInfo {
+            id: TweakId::GamesTaskPriority,
+            label: "Priorité GPU/CPU des jeux (MMCSS Games)".into(),
+            category: "Gaming".into(),
+            impact: "variable".into(),
+            pro_only: true,
+            applied: safety::read_dword("HKLM", MMCSS_GAMES, "GPU Priority") == Some(8),
+            description: "Augmente la priorité GPU et CPU réservée à la catégorie « Jeux » du planificateur multimédia.".into(),
+        },
+        power_throttling_info(),
+        TweakInfo {
+            id: TweakId::DisableDiagTrack,
+            label: "Désactiver la télémétrie Windows (DiagTrack)".into(),
+            category: "Windows".into(),
+            impact: "faible (un peu de CPU/RAM en fond)".into(),
+            pro_only: true,
+            applied: ps("(Get-Service DiagTrack -ErrorAction SilentlyContinue).StartType").map(|v| v == "Disabled").unwrap_or(false),
+            description: "Coupe le service de collecte de données « Connected User Experiences and Telemetry ».".into(),
+        },
     ])
+}
+
+// Sortie séparée pour rester lisible (PowerThrottling).
+fn power_throttling_info() -> TweakInfo {
+    TweakInfo {
+        id: TweakId::DisablePowerThrottling,
+        label: "Désactiver le bridage de puissance CPU".into(),
+        category: "Windows".into(),
+        impact: "faible à moyen (portables surtout)".into(),
+        pro_only: true,
+        applied: safety::read_dword("HKLM", POWER_THROTTLING, "PowerThrottlingOff") == Some(1),
+        description: "Empêche Windows de réduire la puissance du CPU pour les applis au premier plan.".into(),
+    }
 }
 
 pub async fn apply(ids: &[TweakId], journal: &mut Journal) -> Result<Value> {
@@ -267,6 +350,41 @@ pub async fn apply(ids: &[TweakId], journal: &mut Journal) -> Result<Value> {
                 // Non réversible par nature -> pas de journalisation.
                 ps("Remove-Item 'C:\\Windows\\Prefetch\\*' -Force -ErrorAction SilentlyContinue").map(|_| ())
             }
+            TweakId::GamingResponsiveness => {
+                safety::set_registry_dword(journal, "gaming_responsiveness", "HKLM", MMCSS, "SystemResponsiveness", 0)
+            }
+            TweakId::ForegroundBoost => {
+                safety::set_registry_dword(journal, "foreground_boost", "HKLM", PRIORITY_CTRL, "Win32PrioritySeparation", 0x26)
+            }
+            TweakId::NetworkThrottlingOff => {
+                safety::set_registry_dword(journal, "network_throttling_off", "HKLM", MMCSS, "NetworkThrottlingIndex", 0xFFFF_FFFF)
+            }
+            TweakId::GamesTaskPriority => {
+                safety::set_registry_dword(journal, "games_task_priority", "HKLM", MMCSS_GAMES, "GPU Priority", 8)?;
+                safety::set_registry_dword(journal, "games_task_priority", "HKLM", MMCSS_GAMES, "Priority", 6)?;
+                safety::set_registry_string(journal, "games_task_priority", "HKLM", MMCSS_GAMES, "Scheduling Category", "High")?;
+                safety::set_registry_string(journal, "games_task_priority", "HKLM", MMCSS_GAMES, "SFIO Priority", "High")
+            }
+            TweakId::DisableMouseAccel => {
+                safety::set_registry_string(journal, "mouse_accel_off", "HKCU", MOUSE_KEY, "MouseSpeed", "0")?;
+                safety::set_registry_string(journal, "mouse_accel_off", "HKCU", MOUSE_KEY, "MouseThreshold1", "0")?;
+                safety::set_registry_string(journal, "mouse_accel_off", "HKCU", MOUSE_KEY, "MouseThreshold2", "0")
+            }
+            TweakId::DisablePowerThrottling => {
+                safety::set_registry_dword(journal, "power_throttling_off", "HKLM", POWER_THROTTLING, "PowerThrottlingOff", 1)
+            }
+            TweakId::DisableDiagTrack => {
+                let prev = ps("(Get-Service DiagTrack).StartType").unwrap_or_else(|_| "Automatic".into());
+                journal.record(ChangeEntry {
+                    tweak_id: "disable_diagtrack".into(),
+                    kind: "service".into(),
+                    target: "DiagTrack".into(),
+                    previous: json!(prev),
+                    applied: json!("Disabled"),
+                    at: chrono::Utc::now().to_rfc3339(),
+                });
+                ps("Stop-Service DiagTrack -Force -ErrorAction SilentlyContinue; Set-Service DiagTrack -StartupType Disabled").map(|_| ())
+            }
         };
         match r {
             Ok(_) => done.push(format!("{id:?}")),
@@ -329,6 +447,10 @@ pub fn tweak_is_pro(id: &TweakId) -> bool {
             | TweakId::HardwareGpuScheduling
             | TweakId::DnsCloudflare
             | TweakId::CleanPrefetch
+            | TweakId::NetworkThrottlingOff
+            | TweakId::GamesTaskPriority
+            | TweakId::DisablePowerThrottling
+            | TweakId::DisableDiagTrack
     )
 }
 
@@ -349,33 +471,33 @@ pub fn profile_for(game: &str) -> Option<GameProfile> {
     let (priority, summary, tweaks): (&str, &str, Vec<TweakId>) = match game {
         "FiveM" => (
             "High",
-            "FiveM est très gourmand en CPU mono-cœur et sensible au réseau : priorité CPU haute + latence (Nagle) et DNS rapide.",
-            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay, DnsCloudflare],
+            "FiveM est très gourmand en CPU mono-cœur et sensible au réseau : priorité CPU + réactivité système, latence (Nagle), DNS rapide et bridage réseau levé.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, GamingResponsiveness, ForegroundBoost, TcpNoDelay, DnsCloudflare, NetworkThrottlingOff],
         ),
         "Valorant" => (
             "High",
-            "Compétitif : on privilégie la latence et le CPU, et on coupe l'enregistrement en arrière-plan.",
-            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay],
+            "Compétitif : latence et CPU prioritaires, visée brute (sans accélération souris), enregistrement en fond coupé.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, GamingResponsiveness, ForegroundBoost, DisableMouseAccel, TcpNoDelay, NetworkThrottlingOff],
         ),
         "CS2" => (
             "High",
-            "Compétitif Source 2 : latence réseau réduite + planification GPU matérielle.",
-            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay, HardwareGpuScheduling],
+            "Compétitif Source 2 : latence réseau, visée brute, réactivité système et planification GPU matérielle.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, GamingResponsiveness, ForegroundBoost, DisableMouseAccel, TcpNoDelay, HardwareGpuScheduling],
         ),
         "Fortnite" => (
             "High",
-            "Gros moteur : CPU/GPU dégagés, planification GPU matérielle, effets Windows allégés.",
-            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, HardwareGpuScheduling, VisualEffectsPerformance],
+            "Gros moteur : CPU/GPU dégagés, réactivité système, planification GPU matérielle, effets Windows allégés.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, GamingResponsiveness, ForegroundBoost, HardwareGpuScheduling, VisualEffectsPerformance],
         ),
         "Warzone" => (
             "High",
-            "Très lourd en RAM et CPU : compression mémoire coupée (si ≥16 Go), planification GPU, anti-DVR.",
-            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, DisableMemCompression, HardwareGpuScheduling],
+            "Très lourd en RAM et CPU : compression mémoire coupée (si ≥16 Go), réactivité système, planification GPU, anti-DVR.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, GamingResponsiveness, ForegroundBoost, DisableMemCompression, HardwareGpuScheduling],
         ),
         "Apex Legends" => (
             "High",
-            "FPS rapide : on réduit la latence réseau et on monte la priorité CPU.",
-            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, TcpNoDelay],
+            "FPS rapide : latence réseau réduite, visée brute, réactivité système et priorité CPU.",
+            vec![PowerPlanHighPerf, DisableGameDvr, EnableGameMode, GamingResponsiveness, ForegroundBoost, DisableMouseAccel, TcpNoDelay, NetworkThrottlingOff],
         ),
         _ => return None,
     };

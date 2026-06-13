@@ -122,6 +122,49 @@ pub fn set_registry_dword(
     Ok(())
 }
 
+/// Helper registre journalisé pour les valeurs CHAÎNE (REG_SZ).
+pub fn set_registry_string(
+    journal: &mut Journal,
+    tweak_id: &str,
+    hive: &str,
+    key: &str,
+    name: &str,
+    value: &str,
+) -> Result<()> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let root = match hive {
+        "HKLM" => RegKey::predef(HKEY_LOCAL_MACHINE),
+        _ => RegKey::predef(HKEY_CURRENT_USER),
+    };
+    let (k, _) = root.create_subkey(key)?;
+    let previous: Value = match k.get_value::<String, _>(name) {
+        Ok(v) => json!(v),
+        Err(_) => Value::Null,
+    };
+    k.set_value(name, &value.to_string())?;
+    journal.record(ChangeEntry {
+        tweak_id: tweak_id.into(),
+        kind: "registry".into(),
+        target: format!("{hive}\\{key}\\{name}"),
+        previous,
+        applied: json!(value),
+        at: chrono::Utc::now().to_rfc3339(),
+    });
+    Ok(())
+}
+
+/// Lecture rapide d'un DWORD (pour détecter l'état "appliqué" sans PowerShell).
+pub fn read_dword(hive: &str, key: &str, name: &str) -> Option<u32> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let root = match hive {
+        "HKLM" => RegKey::predef(HKEY_LOCAL_MACHINE),
+        _ => RegKey::predef(HKEY_CURRENT_USER),
+    };
+    root.open_subkey(key).ok()?.get_value::<u32, _>(name).ok()
+}
+
 /// Restaure une entrée registre à sa valeur d'origine.
 pub fn revert_registry(entry: &ChangeEntry) -> Result<()> {
     use winreg::enums::*;
