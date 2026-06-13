@@ -170,6 +170,30 @@ async fn ai_analysis(scan: Value, locale: String) -> Result<Value, String> {
     ai::analyze(scan, &locale).await.map_err(|e| e.to_string())
 }
 
+/// CHAT IA (support PC + app) : relaie l'historique + le contexte au serveur
+/// (qui détient la clé Gemini) et renvoie { reply, action }. L'action proposée
+/// est exécutée par l'app UNIQUEMENT après confirmation de l'utilisateur.
+#[tauri::command]
+async fn ai_chat(messages: Value, context: Value) -> Result<Value, String> {
+    ai::chat(messages, context).await.map_err(|e| e.to_string())
+}
+
+/// RÉINITIALISER LE PROFIL : annule d'abord toutes les optimisations (PC remis à
+/// l'état d'origine), vide le journal, déconnecte le compte et coupe la télémétrie.
+/// Action destructive — l'UI exige une confirmation explicite avant de l'appeler.
+#[tauri::command]
+async fn reset_profile() -> Result<Value, String> {
+    let mut journal = safety::Journal::load().map_err(|e| e.to_string())?;
+    let report = optimizations::rollback(&mut journal)
+        .await
+        .map_err(|e| e.to_string())?;
+    // Vide complètement le journal local, déconnecte, coupe la télémétrie.
+    let _ = safety::Journal::default().save();
+    license::logout();
+    telemetry::set_consent(false);
+    Ok(serde_json::json!({ "ok": true, "reverted": report["reverted"] }))
+}
+
 /// GAME BOOST : applique le profil du jeu choisi (priorité CPU, overlays, standby list…).
 #[tauri::command]
 async fn game_boost(game: String) -> Result<Value, String> {
@@ -236,6 +260,8 @@ fn main() {
             health_score,
             free_analysis,
             ai_analysis,
+            ai_chat,
+            reset_profile,
             game_boost,
             active_game,
             game_profile,

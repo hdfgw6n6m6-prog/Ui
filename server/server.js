@@ -70,7 +70,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS snapshots (discord_id TEXT PRIMARY KEY, hwid TEXT, score INTEGER, hw TEXT, last_seen TEXT DEFAULT (datetime('now')));
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 `);
-for (const [n, s] of [["ai_analysis","pro"],["network_tweaks","pro"],["game_profiles","pro"],["monitoring","free"]]) {
+for (const [n, s] of [["ai_analysis","pro"],["ai_chat","pro"],["network_tweaks","pro"],["game_profiles","pro"],["monitoring","free"]]) {
   db.prepare("INSERT OR IGNORE INTO flags (name, enabled, scope) VALUES (?,1,?)").run(n, s);
 }
 
@@ -294,6 +294,68 @@ app.post("/v1/analyze", async (req, res) => {
   } catch (e) {
     console.error("[analyze]", e);
     res.status(502).json({ error: "analyse indisponible" });
+  }
+});
+
+// --- CHAT IA AGENTIQUE (support PC + app), feature Pro 100% serveur ---
+// Gemini voit le profil/etat de l'app (contexte) et PROPOSE des actions que
+// l'app execute APRES confirmation de l'utilisateur. Le serveur n'execute rien
+// sur le PC : il ne fait que router vers Gemini.
+const CHAT_ACTIONS = "free_analysis{}, apply_recommended{}, apply_game_profile{game}, rollback_all{}, reset_profile{}, open_tab{tab in [pulse,optims,securite,assistant]}";
+const CHAT_SYSTEM = `Tu es l'assistant integre de PulseBoost (optimiseur PC pour gamers) ET le support de l'application.
+TON ROLE : aider a regler les problemes du PC (perfs, FPS, latence, reglages Windows) ET les problemes de l'app (licence, activation, optimisations, profil).
+REGLES STRICTES :
+- Jamais de FPS chiffres garantis : "faible / moyen / variable selon ta config".
+- Tu N'EXECUTES rien toi-meme. Quand une action est utile, tu la PROPOSES dans le champ "action" ; l'app demandera CONFIRMATION a l'utilisateur puis l'executera.
+- Pour toute action destructive (reset_profile, rollback_all), ton "reply" DOIT demander clairement confirmation et expliquer les consequences.
+- Actions autorisees (name + args) : ${CHAT_ACTIONS}. Si aucune action n'est utile, "action": null.
+- Sers-toi du CONTEXTE (licence, score, jeux, optimisations appliquees) pour repondre precisement et tutoyer l'utilisateur.
+- Reponds STRICTEMENT en JSON : {"reply":"texte pour l'utilisateur","action": null | {"name":"...","args":{...}}}`;
+
+app.post("/v1/chat", async (req, res) => {
+  const ss = readSession(req.body.session);
+  if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  const active = db.prepare(`SELECT 1 FROM keys WHERE discord_id=? AND revoked=0
+    AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`).get(ss.id);
+  const flag = db.prepare("SELECT enabled FROM flags WHERE name='ai_chat'").get()?.enabled === 1;
+  if (!active || !flag) return res.status(403).json({ error: "assistant IA reserve aux abonnes Pro actifs" });
+  if (!process.env.GEMINI_API_KEY) return res.status(502).json({ error: "IA non configuree (GEMINI_API_KEY)" });
+
+  // Historique -> format Gemini (roles user/model), limite a 16 derniers tours.
+  const history = (req.body.messages ?? []).slice(-16).map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content ?? "") }],
+  }));
+  if (!history.length) return res.status(400).json({ error: "message manquant" });
+  const context = JSON.stringify(req.body.context ?? {});
+  const sys = `${CHAT_SYSTEM}\nLocale: ${req.body.locale ?? "fr"}\nCONTEXTE UTILISATEUR/APP: ${context}`;
+
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: sys }] },
+          contents: history,
+          generationConfig: { temperature: 0.5, maxOutputTokens: 900, responseMimeType: "application/json" },
+        }),
+      }
+    );
+    const data = await r.json();
+    if (!r.ok) { console.error("[gemini chat]", r.status, JSON.stringify(data).slice(0, 400)); return res.status(502).json({ error: "assistant indisponible" }); }
+    const text = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+    const out = parseJsonLoose(text);
+    // Garde-fou : n'accepter que les actions whitelistees.
+    const allowed = ["free_analysis", "apply_recommended", "apply_game_profile", "rollback_all", "reset_profile", "open_tab"];
+    if (out.action && !allowed.includes(out.action.name)) out.action = null;
+    db.prepare("INSERT INTO events (discord_id,hwid,type,detail) VALUES (?,?,?,?)")
+      .run(ss.id, String(req.body.hwid ?? ""), "ai_chat", out.action?.name ?? null);
+    res.json({ reply: String(out.reply ?? ""), action: out.action ?? null });
+  } catch (e) {
+    console.error("[chat]", e);
+    res.status(502).json({ error: "assistant indisponible" });
   }
 });
 

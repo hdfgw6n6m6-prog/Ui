@@ -31,3 +31,28 @@ pub async fn analyze(scan: Value, locale: &str) -> Result<Value> {
     }
     Ok(resp.json().await?)
 }
+
+/// CHAT IA (support PC + app). Envoie l'historique + un contexte (profil/etat de
+/// l'app) au serveur, qui interroge Gemini et renvoie { reply, action }.
+/// L'action est seulement PROPOSEE : l'app la confirme et l'execute localement.
+pub async fn chat(messages: Value, context: Value) -> Result<Value> {
+    let session = license::session_token().unwrap_or_default();
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{SERVER}/v1/chat"))
+        .json(&json!({
+            "session": session,
+            "hwid": license::hwid(),
+            "messages": messages,
+            "context": context,
+            "locale": "fr",
+            "app_version": env!("CARGO_PKG_VERSION")
+        }))
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Assistant IA indisponible ({}) — reserve aux abonnes Pro actifs.", resp.status());
+    }
+    Ok(resp.json().await?)
+}

@@ -10,7 +10,7 @@ import LiveMonitor from "./components/LiveMonitor.jsx";
 import QuickMeasure from "./components/QuickMeasure.jsx";
 import {
   IconPulse, IconSliders, IconShield, IconBolt, IconCheck, IconUndo,
-  IconGem, IconWarn, IconDiscord, IconGauge,
+  IconGem, IconWarn, IconDiscord, IconGauge, IconChat, IconSend,
 } from "./components/Icons.jsx";
 
 const TIER_COLOR = { vert: "var(--ok)", orange: "var(--warn)", rouge: "var(--bad)" };
@@ -29,11 +29,13 @@ const pushHist = (arr, v) => [...arr, v].slice(-HIST);
 const TABS = [
   ["pulse", "Accueil", IconPulse],
   ["optims", "Optimisations", IconSliders],
+  ["assistant", "Assistant", IconChat],
   ["securite", "Sécurité", IconShield],
 ];
 const TAB_SUB = {
   pulse: "Santé, mesure et boost de ton PC",
   optims: "Tweaks réversibles, regroupés par niveau",
+  assistant: "Chat IA : règle tes soucis PC et app",
   securite: "Journal complet et retour arrière 1 clic",
 };
 
@@ -65,6 +67,9 @@ export default function App() {
   const [activeGame, setActiveGame] = useState(null);
   const [profile, setProfile] = useState(null);
   const [autoAdapt, setAutoAdapt] = useState(() => localStorage.getItem("pb_auto_adaptive") === "1");
+  const [chat, setChat] = useState([]); // { role: "user"|"assistant", content, action? }
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
   const isPro = pro;
   const toastTimer = useRef(null);
   const lastAutoGame = useRef(null);
@@ -261,6 +266,75 @@ export default function App() {
     try { await invoke("submit_churn", { reason, comment: comment || "" }); } catch {}
     setChurnOpen(false);
     notify("Merci pour ton retour.");
+  };
+
+  // --- Assistant IA (chat agentique) ---
+  // Contexte envoyé à Gemini : profil + état de l'app (lecture). Pas de données
+  // sensibles brutes, juste de quoi répondre juste.
+  const buildContext = () => ({
+    pro: isPro,
+    connecte_discord: logged,
+    pseudo: discordName,
+    score: health?.score ?? null,
+    etat: health?.tier ?? null,
+    problemes: (health?.reasons ?? []).map((r) => r.label),
+    optimisations_appliquees: tweaks.filter((t) => t.applied).map((t) => t.label),
+    jeu_en_cours: activeGame,
+    telemetrie: telemetry,
+    onglet_actuel: tab,
+  });
+
+  const runAction = async (action) => {
+    if (!action?.name) return;
+    try {
+      switch (action.name) {
+        case "free_analysis": await runFree(); setTab("pulse"); return "Analyse gratuite effectuée — vois l'estimation sur l'Accueil.";
+        case "apply_recommended": await applyIds([...ONE_CLICK_FREE, ...(isPro ? ONE_CLICK_PRO : [])].flatMap((id) => tweaks.filter((t) => t.id === id && !t.applied).map((t) => t.id))); return "Optimisations recommandées appliquées (point de restauration créé).";
+        case "apply_game_profile": {
+          const g = action.args?.game || activeGame;
+          if (!g) return "Aucun jeu détecté — lance ton jeu puis redemande.";
+          await applyGameProfile(g); return `Profil ${g} appliqué.`;
+        }
+        case "rollback_all": await rollback(); return "Toutes les modifications ont été annulées.";
+        case "reset_profile": {
+          const r = await invoke("reset_profile");
+          localStorage.removeItem("pb_was_pro"); localStorage.removeItem("pb_auto_adaptive"); localStorage.removeItem("pb_measure_last");
+          setPro(false); setLogged(false); setDiscordName(null); setTelemetry(false); setAutoAdapt(false);
+          await refreshTweaks(); setHealth(await invoke("health_score"));
+          return `Profil réinitialisé : ${r.reverted ?? 0} changement(s) annulé(s), déconnexion effectuée.`;
+        }
+        case "open_tab": { const t = action.args?.tab; if (TABS.some(([k]) => k === t)) setTab(t); return `Onglet « ${t} » ouvert.`; }
+        default: return "Action non reconnue.";
+      }
+    } catch (e) { return "Échec : " + String(e); }
+  };
+
+  const sendChat = async (text) => {
+    const msg = (text ?? chatInput).trim();
+    if (!msg || chatBusy) return;
+    setChatInput("");
+    const history = [...chat, { role: "user", content: msg }];
+    setChat(history);
+    setChatBusy(true);
+    try {
+      const r = await invoke("ai_chat", {
+        messages: history.map(({ role, content }) => ({ role, content })),
+        context: buildContext(),
+      });
+      setChat((c) => [...c, { role: "assistant", content: r.reply || "…", action: r.action || null }]);
+    } catch (e) {
+      setChat((c) => [...c, { role: "assistant", content: String(e), action: null }]);
+    } finally { setChatBusy(false); }
+  };
+
+  // Exécute une action proposée (après confirmation côté UI) et journalise le résultat dans le chat.
+  const confirmChatAction = async (idx, action) => {
+    setChat((c) => c.map((m, i) => i === idx ? { ...m, action: { ...m.action, done: true } } : m));
+    const result = await runAction(action);
+    setChat((c) => [...c, { role: "assistant", content: result, action: null }]);
+  };
+  const dismissChatAction = (idx) => {
+    setChat((c) => c.map((m, i) => i === idx ? { ...m, action: { ...m.action, dismissed: true } } : m));
   };
 
   const loadLog = async () => { try { setLog(await invoke("change_log")); } catch {} };
@@ -513,6 +587,19 @@ export default function App() {
             </>
           )}
 
+          {tab === "assistant" && (
+            <Assistant
+              chat={chat}
+              chatInput={chatInput}
+              setChatInput={setChatInput}
+              chatBusy={chatBusy}
+              onSend={sendChat}
+              onConfirm={confirmChatAction}
+              onDismiss={dismissChatAction}
+              isPro={isPro}
+            />
+          )}
+
           {tab === "securite" && (
             <>
               <TrustStrip />
@@ -650,6 +737,90 @@ function FreeAnalysisCard({ data, onOptimize, busy, pending }) {
           {busy ? <span className="spin" /> : <IconBolt />} Réaliser ce gain (1 clic)
         </button>
       </div>
+    </div>
+  );
+}
+
+// Assistant IA agentique : chat de support PC + app. Les actions proposées par
+// Gemini ne s'exécutent qu'après confirmation explicite de l'utilisateur.
+const DESTRUCTIVE = new Set(["reset_profile", "rollback_all"]);
+const ACTION_LABEL = {
+  free_analysis: "Lancer l'analyse gratuite",
+  apply_recommended: "Appliquer les optimisations recommandées",
+  apply_game_profile: "Appliquer le profil du jeu",
+  rollback_all: "Tout annuler (rollback)",
+  reset_profile: "Réinitialiser le profil",
+  open_tab: "Changer d'onglet",
+};
+const SUGGESTIONS = [
+  "Mon PC rame en jeu, que faire ?",
+  "Optimise mon PC",
+  "Réinitialise mon profil",
+  "Comment activer ma clé Pro ?",
+];
+
+function Assistant({ chat, chatInput, setChatInput, chatBusy, onSend, onConfirm, onDismiss, isPro }) {
+  const endRef = useRef(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chat, chatBusy]);
+
+  return (
+    <div className="card chat-card">
+      <div className="card-head">
+        <div>
+          <h2><IconChat width={18} height={18} style={{ verticalAlign: "-3px", marginRight: 6, color: "var(--pulse-2)" }} />Assistant IA</h2>
+          <p className="lead">Décris ton souci (PC ou application). L'assistant peut proposer une action ; rien ne s'exécute sans ta confirmation.</p>
+        </div>
+        {!isPro && <span className="lock">PRO</span>}
+      </div>
+
+      <div className="chat-scroll">
+        {chat.length === 0 && (
+          <div className="chat-empty">
+            <p className="muted">Pose ta question, ou choisis :</p>
+            <div className="suggestions">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} className="chip" onClick={() => onSend(s)}>{s}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        {chat.map((m, i) => (
+          <div key={i} className={"bubble " + m.role}>
+            <div className="bubble-body">{m.content}</div>
+            {m.action && !m.action.dismissed && (
+              <div className={"action-card" + (DESTRUCTIVE.has(m.action.name) ? " danger" : "")}>
+                <div className="action-head">
+                  {DESTRUCTIVE.has(m.action.name) && <IconWarn width={15} height={15} />}
+                  <b>{ACTION_LABEL[m.action.name] ?? m.action.name}</b>
+                  {m.action.args?.game && <span className="muted"> · {m.action.args.game}</span>}
+                </div>
+                {m.action.done
+                  ? <span className="muted tiny">Exécution…</span>
+                  : <div className="action-btns">
+                      <button className="btn tiny-btn" onClick={() => onDismiss(i)}>Annuler</button>
+                      <button className={"btn tiny-btn " + (DESTRUCTIVE.has(m.action.name) ? "danger" : "primary")} onClick={() => onConfirm(i, m.action)}>
+                        Confirmer
+                      </button>
+                    </div>}
+              </div>
+            )}
+          </div>
+        ))}
+        {chatBusy && <div className="bubble assistant"><div className="bubble-body typing"><span /><span /><span /></div></div>}
+        <div ref={endRef} />
+      </div>
+
+      <form className="chat-input" onSubmit={(e) => { e.preventDefault(); onSend(); }}>
+        <input
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          placeholder="Écris ton message…"
+          disabled={chatBusy}
+        />
+        <button className="btn primary" type="submit" disabled={chatBusy || !chatInput.trim()}>
+          <IconSend />
+        </button>
+      </form>
     </div>
   );
 }

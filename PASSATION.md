@@ -195,6 +195,15 @@ npm run tauri build      # installeur NSIS dans src-tauri/target/release/bundle
 
 ## 9. Roadmap — ce qui RESTE à faire
 
+> Ajouts récents v3 (FAIT) : **Assistant IA agentique** (chat Gemini, feature Pro,
+> flag `ai_chat`) — endpoint serveur `/v1/chat`, client `ai::chat`, commande
+> `ai_chat`. Il voit un **contexte profil/app** (licence, score, problèmes, tweaks
+> appliqués, jeu en cours) et **propose** des actions whitelistées
+> (`free_analysis`, `apply_recommended`, `apply_game_profile`, `rollback_all`,
+> `reset_profile`, `open_tab`) que l'app n'exécute **qu'après confirmation**
+> explicite de l'utilisateur. Nouvelle commande `reset_profile` (rollback + vidage
+> journal + déconnexion + télémétrie off). Onglet « Assistant » côté UI.
+>
 > Ajouts récents v2 (FAIT) : **analyse GRATUITE locale** (`free_analysis` →
 > estimation d'un gain FPS en FOURCHETTE honnête « +X à +Y % », jamais garantie ;
 > carte dédiée côté UI) ; **7 optimisations gaming avancées réversibles**
