@@ -1,10 +1,41 @@
-// App.jsx — UI principale PulseBoost
-// 3 onglets : Pulse (dashboard), Optimisations, Sécurité (journal + rollback).
-import React, { useEffect, useMemo, useState } from "react";
+// App.jsx — UI principale PulseBoost (refonte 2026)
+// Accueil recentré sur UNE action ("Optimiser en 1 clic") + confiance visible +
+// mesure avant/après + monitoring temps réel. Onglets : Accueil, Optimisations,
+// Sécurité. Toute la logique s'appuie sur l'API Tauri existante (aucun nouveau
+// backend requis).
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import ScoreGauge from "./components/ScoreGauge.jsx";
+import LiveMonitor from "./components/LiveMonitor.jsx";
+import QuickMeasure from "./components/QuickMeasure.jsx";
+import {
+  IconPulse, IconSliders, IconShield, IconBolt, IconCheck, IconUndo,
+  IconGem, IconWarn, IconDiscord,
+} from "./components/Icons.jsx";
 
 const TIER_COLOR = { vert: "var(--ok)", orange: "var(--warn)", rouge: "var(--bad)" };
+const TIER_LABEL = { vert: "Bon état", orange: "À optimiser", rouge: "Critique" };
+
+// Jeu de tweaks appliqués par "Optimiser en 1 clic" : sûrs, réversibles, à fort
+// rapport bénéfice/risque. Les sensibles (réseau, mémoire, HAGS, DNS) restent en
+// mode "Avancé", choisis manuellement.
+const ONE_CLICK_FREE = ["power_plan_high_perf", "disable_game_dvr", "enable_game_mode", "visual_effects_performance", "disable_startup_delay"];
+const ONE_CLICK_PRO = ["disable_sysmain"];
+const RECOMMENDED = new Set([...ONE_CLICK_FREE, ...ONE_CLICK_PRO, "startup_report"]);
+
+const HIST = 30; // points d'historique des sparklines
+const pushHist = (arr, v) => [...arr, v].slice(-HIST);
+
+const TABS = [
+  ["pulse", "Accueil", IconPulse],
+  ["optims", "Optimisations", IconSliders],
+  ["securite", "Sécurité", IconShield],
+];
+const TAB_SUB = {
+  pulse: "Santé, mesure et boost de ton PC",
+  optims: "Tweaks réversibles, regroupés par niveau",
+  securite: "Journal complet et retour arrière 1 clic",
+};
 
 export default function App() {
   const [tab, setTab] = useState("pulse");
@@ -15,6 +46,9 @@ export default function App() {
   const [tweaks, setTweaks] = useState([]);
   const [selected, setSelected] = useState([]);
   const [live, setLive] = useState({ cpu_pct: 0, ram_pct: 0, cpu_temp_c: null });
+  const [cpuHist, setCpuHist] = useState([]);
+  const [ramHist, setRamHist] = useState([]);
+  const [tempHist, setTempHist] = useState([]);
   const [log, setLog] = useState([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
@@ -25,21 +59,19 @@ export default function App() {
   const [logged, setLogged] = useState(false);
   const [telemetry, setTelemetry] = useState(false);
   const [churnOpen, setChurnOpen] = useState(false);
+  const [optView, setOptView] = useState("reco"); // reco | avance
   const isPro = pro;
+  const toastTimer = useRef(null);
 
-  const notify = (msg) => { setToast(msg); setTimeout(() => setToast(null), 4000); };
+  const notify = (msg) => {
+    setToast(msg);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4200);
+  };
+
+  const refreshTweaks = async () => { try { setTweaks(await invoke("list_tweaks")); } catch {} };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [s, h, t] = await Promise.all([
-          invoke("scan_hardware"),
-          invoke("health_score"),
-          invoke("list_tweaks"),
-        ]);
-        setScan(s); setHealth(h); setTweaks(t);
-      } catch (e) { notify(String(e)); }
-    })();
     // 0) Porte de sécurité AVANT tout (blacklist/tamper, marche hors-ligne)
     (async () => {
       try {
@@ -66,7 +98,6 @@ export default function App() {
           const hb = await invoke("license_heartbeat");
           setPro(!!hb.pro);
           if (hb.command?.type === "alert") notify(hb.command.payload);
-          // Churn : déjà connu comme Pro mais plus actif -> proposer un court sondage.
           const wasPro = localStorage.getItem("pb_was_pro") === "1";
           if (wasPro && !hb.pro) setChurnOpen(true);
           localStorage.setItem("pb_was_pro", hb.pro ? "1" : "0");
@@ -75,17 +106,22 @@ export default function App() {
     })();
 
     const iv = setInterval(async () => {
-      try { setLive(await invoke("live_stats")); } catch {}
+      try {
+        const s = await invoke("live_stats");
+        setLive(s);
+        setCpuHist((a) => pushHist(a, s.cpu_pct ?? 0));
+        setRamHist((a) => pushHist(a, s.ram_pct ?? 0));
+        if (s.cpu_temp_c != null) setTempHist((a) => pushHist(a, s.cpu_temp_c));
+      } catch {}
     }, 2000);
-    return () => clearInterval(iv);
+    return () => { clearInterval(iv); clearTimeout(toastTimer.current); };
   }, []);
 
   const loginDiscord = async () => {
     setBusy(true);
     try {
       const name = await invoke("discord_login");
-      setDiscordName(name);
-      setLogged(true);
+      setDiscordName(name); setLogged(true);
       notify(`Connecté en tant que ${name}. Tu peux activer ta clé.`);
       const hb = await invoke("license_heartbeat");
       setPro(!!hb.pro);
@@ -99,7 +135,7 @@ export default function App() {
       const r = await invoke("redeem_key", { key: keyInput });
       setPro(true);
       notify(`Clé ${r.plan} activée et liée à ton compte Discord.`);
-      setTweaks(await invoke("list_tweaks"));
+      await refreshTweaks();
     } catch (e) { notify(String(e)); }
     finally { setBusy(false); }
   };
@@ -112,24 +148,38 @@ export default function App() {
     finally { setAiBusy(false); }
   };
 
-  const applySelected = async () => {
+  const applyIds = async (ids) => {
+    if (!ids.length) { notify("Rien à appliquer : tout est déjà en place."); return; }
     setBusy(true);
     try {
-      const r = await invoke("apply_tweaks", { ids: selected });
-      notify(`${r.applied.length} optimisation(s) appliquée(s). Point de restauration créé.`);
-      setTweaks(await invoke("list_tweaks"));
+      const r = await invoke("apply_tweaks", { ids });
+      const n = r.applied?.length ?? 0;
+      notify(n
+        ? `${n} optimisation(s) appliquée(s). Point de restauration créé — réversible à tout moment.`
+        : "Aucun changement nécessaire.");
+      await refreshTweaks();
       setHealth(await invoke("health_score"));
       setSelected([]);
     } catch (e) { notify(String(e)); }
     finally { setBusy(false); }
   };
 
+  // Optimiser en 1 clic : applique le set recommandé non encore appliqué.
+  const oneClick = () => {
+    const wanted = [...ONE_CLICK_FREE, ...(isPro ? ONE_CLICK_PRO : [])];
+    const ids = tweaks.filter((t) => wanted.includes(t.id) && !t.applied).map((t) => t.id);
+    applyIds(ids);
+  };
+
+  const applySelected = () => applyIds(selected);
+
   const rollback = async () => {
     setBusy(true);
     try {
       const r = await invoke("rollback_all");
       notify(`${r.reverted} changement(s) annulé(s). Ton PC est revenu à son état d'origine.`);
-      setTweaks(await invoke("list_tweaks"));
+      await refreshTweaks();
+      setHealth(await invoke("health_score"));
     } catch (e) { notify(String(e)); }
     finally { setBusy(false); }
   };
@@ -138,14 +188,13 @@ export default function App() {
     try {
       const r = await invoke("game_boost", { game });
       notify(r.priority === "ok"
-        ? `${game} : priorité CPU haute activée.`
+        ? `${game} : priorité CPU haute activée. Restaurée à la fermeture du jeu.`
         : `${game} ne tourne pas encore — lance le jeu puis réessaie.`);
     } catch (e) { notify(String(e)); }
   };
 
   const toggleTelemetry = async () => {
-    const v = !telemetry;
-    setTelemetry(v);
+    const v = !telemetry; setTelemetry(v);
     try { await invoke("set_telemetry_consent", { on: v }); } catch {}
   };
 
@@ -155,14 +204,32 @@ export default function App() {
     notify("Merci pour ton retour.");
   };
 
-  const loadLog = async () => setLog(await invoke("change_log"));
+  const loadLog = async () => { try { setLog(await invoke("change_log")); } catch {} };
   useEffect(() => { if (tab === "securite") loadLog(); }, [tab]);
 
-  const freeTweaks = useMemo(() => tweaks.filter((t) => !t.pro_only), [tweaks]);
+  const recoTweaks = useMemo(() => tweaks.filter((t) => RECOMMENDED.has(t.id) && !t.pro_only), [tweaks]);
+  const advFree = useMemo(() => tweaks.filter((t) => !RECOMMENDED.has(t.id) && !t.pro_only), [tweaks]);
   const proTweaks = useMemo(() => tweaks.filter((t) => t.pro_only), [tweaks]);
+  const pendingOneClick = useMemo(() => {
+    const wanted = [...ONE_CLICK_FREE, ...(isPro ? ONE_CLICK_PRO : [])];
+    return tweaks.filter((t) => wanted.includes(t.id) && !t.applied).length;
+  }, [tweaks, isPro]);
 
-  // Écran de verrouillage : blacklist / falsification détectée (même hors-ligne).
-  if (gate.state !== "ok" && gate.state !== "checking") {
+  const cpuClass = live.cpu_pct >= 90 ? "bad" : live.cpu_pct >= 70 ? "warn" : "";
+  const ramClass = live.ram_pct >= 90 ? "bad" : live.ram_pct >= 70 ? "warn" : "";
+
+  // --- Écran de chargement (porte de sécurité en cours) ---
+  if (gate.state === "checking") {
+    return (
+      <div className="boot">
+        <span className="logo-pulse" />
+        <p>Vérification de sécurité…</p>
+      </div>
+    );
+  }
+
+  // --- Écran verrouillé : blacklist / falsification (même hors-ligne) ---
+  if (gate.state !== "ok") {
     return (
       <div className="locked">
         <div className="lock-card">
@@ -180,162 +247,256 @@ export default function App() {
       <aside className="rail">
         <div className="logo"><span className="logo-pulse" />PulseBoost</div>
         <nav>
-          {[["pulse", "Pulse"], ["optims", "Optimisations"], ["securite", "Sécurité"]].map(([k, l]) => (
-            <button key={k} className={tab === k ? "nav on" : "nav"} onClick={() => setTab(k)}>{l}</button>
+          {TABS.map(([k, l, Ic]) => (
+            <button key={k} className={tab === k ? "nav on" : "nav"} onClick={() => setTab(k)}>
+              <Ic className="ic" /> {l}
+            </button>
           ))}
         </nav>
         <div className="rail-foot">
-          <div className="stat-mini"><span>CPU</span><b>{live.cpu_pct?.toFixed(0)}%</b></div>
-          <div className="stat-mini"><span>RAM</span><b>{live.ram_pct?.toFixed(0)}%</b></div>
-          {live.cpu_temp_c != null && <div className="stat-mini"><span>Temp</span><b>{live.cpu_temp_c.toFixed(0)}°C</b></div>}
+          <div className={"pro-pill " + (isPro ? "on" : "off")}>
+            <IconGem className="gem" />
+            {isPro ? "PulseBoost Pro" : "Version gratuite"}
+          </div>
         </div>
       </aside>
 
       <main className="content">
-        {tab === "pulse" && (
-          <section className="grid-pulse">
-            <div className="card hero">
-              <ScoreGauge value={health?.score ?? 0} color={TIER_COLOR[health?.tier] ?? "var(--ok)"} />
-              <div className="hero-side">
-                <h1>Santé de ton PC</h1>
-                {health?.reasons?.length
-                  ? <ul className="reasons">{health.reasons.map((r, i) => (
-                      <li key={i}><span className={"dot " + r.severity}>–{r.penalty}</span>{r.label}</li>
-                    ))}</ul>
-                  : <p className="muted">Aucun problème détecté. Sérieusement, ton PC est propre.</p>}
-                <button className="btn primary" onClick={runAi} disabled={aiBusy || !scan}>
-                  {aiBusy ? "Analyse en cours…" : "Analyse IA détaillée"}
-                </button>
-              </div>
-            </div>
+        <div className="topbar">
+          <div>
+            <h1>{TABS.find(([k]) => k === tab)[1]}</h1>
+            <div className="sub">{TAB_SUB[tab]}</div>
+          </div>
+          <div className="topbar-live">
+            <div className="chip-stat"><span>CPU</span><b className={cpuClass}>{Math.round(live.cpu_pct ?? 0)}%</b></div>
+            <div className="chip-stat"><span>RAM</span><b className={ramClass}>{Math.round(live.ram_pct ?? 0)}%</b></div>
+            {live.cpu_temp_c != null && <div className="chip-stat"><span>Temp</span><b>{Math.round(live.cpu_temp_c)}°</b></div>}
+          </div>
+        </div>
 
-            {ai && (
-              <div className="card">
-                <h2>Ce que dit l'analyse</h2>
-                <p>{ai.resume}</p>
-                {ai.limite_materielle && <p className="honest">Limite matérielle : {ai.limite_materielle}</p>}
-                <ul className="reco">
-                  {ai.recommandations?.map((r) => (
-                    <li key={r.id}>
-                      <b>{r.titre}</b> <span className={"badge " + r.priorite}>{r.priorite}</span>
-                      <p>{r.pourquoi}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        <div className="content-inner">
+          {tab === "pulse" && (
+            <>
+              <div className="card hero">
+                <ScoreGauge
+                  value={health?.score ?? 0}
+                  color={TIER_COLOR[health?.tier] ?? "var(--ok)"}
+                  tier={TIER_LABEL[health?.tier] ?? ""}
+                />
+                <div className="hero-side">
+                  <div className="hero-head">
+                    <h1>Santé de ton PC</h1>
+                    {health?.reasons?.length
+                      ? <p className="lead">{health.reasons.length} point(s) à améliorer détecté(s). On peut s'en occuper en un clic.</p>
+                      : <p className="lead">Aucun problème détecté. Ton PC est déjà propre.</p>}
+                  </div>
 
-            <div className="card">
-              <h2>Game Boost</h2>
-              <p className="muted">Lance ton jeu, puis booste-le. Tout revient à la normale à la fermeture.</p>
-              <div className="games">
-                {["FiveM", "Fortnite", "Valorant", "CS2", "Warzone", "Apex Legends"].map((g) => {
-                  const installed = scan?.games?.some((x) => x.name === g);
-                  return (
-                    <button key={g} className={installed ? "game on" : "game"} onClick={() => boost(g)}>
-                      {g}{installed && <span className="installed">détecté</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {tab === "optims" && (
-          <section>
-            <div className="card">
-              <div className="row-between">
-                <h2>Optimisations gratuites</h2>
-                <button className="btn primary" disabled={!selected.length || busy} onClick={applySelected}>
-                  {busy ? "Application…" : `Appliquer (${selected.length})`}
-                </button>
-              </div>
-              <p className="muted">Un point de restauration Windows est créé avant chaque application. Si ça échoue, rien n'est modifié.</p>
-              <TweakList tweaks={freeTweaks} selected={selected} setSelected={setSelected} locked={false} />
-            </div>
-            <div className="card pro">
-              <h2>Optimisations Pro</h2>
-              <TweakList tweaks={proTweaks} selected={selected} setSelected={setSelected} locked={!isPro} />
-              {!isPro && (
-                <div className="activate">
-                  {!discordName && !logged ? (
-                    <>
-                      <p className="muted">Connecte-toi avec Discord, puis active ta clé. La clé se lie à ton compte Discord.</p>
-                      <button className="btn discord" onClick={loginDiscord} disabled={busy}>
-                        {busy ? "Ouverture…" : "Se connecter avec Discord"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="muted">{discordName ? `Connecté : ${discordName}. ` : ""}Colle ta clé pour débloquer le Pro.</p>
-                      <div className="activate-row">
-                        <input
-                          className="key-field"
-                          placeholder="PB-XXXX-XXXX-XXXX-XXXX"
-                          value={keyInput}
-                          onChange={(e) => setKeyInput(e.target.value.toUpperCase())}
-                          maxLength={22}
-                        />
-                        <button className="btn pro-cta" onClick={redeem} disabled={busy || keyInput.length < 10}>
-                          {busy ? "Activation…" : "Activer"}
-                        </button>
-                      </div>
-                    </>
+                  {health?.reasons?.length > 0 && (
+                    <ul className="reasons">
+                      {health.reasons.slice(0, 4).map((r, i) => (
+                        <li key={i}><span className={"dot " + r.severity}>–{r.penalty}</span>{r.label}</li>
+                      ))}
+                    </ul>
                   )}
+
+                  <div className="hero-cta">
+                    <button className="btn primary lg" onClick={oneClick} disabled={busy || !tweaks.length}>
+                      {busy ? <span className="spin" /> : <IconBolt />}
+                      {busy ? "Optimisation…" : "Optimiser en 1 clic"}
+                    </button>
+                    <button className="btn lg" onClick={runAi} disabled={aiBusy || !scan}>
+                      {aiBusy ? <span className="spin" /> : <IconPulse />}
+                      {aiBusy ? "Analyse…" : "Analyse IA"}
+                    </button>
+                  </div>
+                  {pendingOneClick > 0
+                    ? <p className="muted tiny">{pendingOneClick} optimisation(s) recommandée(s) prête(s) — sûres et réversibles.</p>
+                    : <p className="muted tiny">Toutes les optimisations recommandées sont déjà actives.</p>}
+                </div>
+              </div>
+
+              <TrustStrip />
+
+              {ai && (
+                <div className="card">
+                  <h2>Ce que dit l'analyse</h2>
+                  <p style={{ marginTop: 6 }}>{ai.resume}</p>
+                  {ai.limite_materielle && (
+                    <p className="honest"><IconWarn /> Limite matérielle : {ai.limite_materielle}</p>
+                  )}
+                  <ul className="reco">
+                    {ai.recommandations?.map((r) => (
+                      <li key={r.id}>
+                        <b>{r.titre}</b> <span className={"badge " + r.priorite}>{r.priorite}</span>
+                        <p>{r.pourquoi}</p>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
-              {isPro && <p className="pro-active">Licence Pro active — merci ✦</p>}
-            </div>
-          </section>
-        )}
 
-        {tab === "securite" && (
-          <section>
-            <div className="card">
-              <div className="row-between">
-                <h2>Journal des modifications</h2>
-                <button className="btn danger" onClick={rollback} disabled={busy || !log.length}>
-                  Rollback complet
-                </button>
-              </div>
-              <p className="muted">Chaque changement est listé avec sa valeur d'origine. Le rollback restaure tout, dans l'ordre inverse.</p>
-              {log.length === 0
-                ? <p className="empty">Aucune modification pour l'instant. Applique une optimisation pour la voir apparaître ici.</p>
-                : <table className="log">
-                    <thead><tr><th>Quand</th><th>Optimisation</th><th>Cible</th><th>Avant</th><th>Après</th></tr></thead>
-                    <tbody>{log.map((e, i) => (
-                      <tr key={i}>
-                        <td>{new Date(e.quand).toLocaleString("fr-FR")}</td>
-                        <td>{e.optimisation}</td>
-                        <td className="mono">{e.cible}</td>
-                        <td className="mono">{JSON.stringify(e.avant)}</td>
-                        <td className="mono">{JSON.stringify(e["après"])}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>}
-            </div>
-            <div className="card">
-              <div className="row-between">
-                <div>
-                  <h2>Statistiques d'usage anonymes</h2>
-                  <p className="muted" style={{ maxWidth: 520 }}>
-                    Optionnel. Si tu actives, l'app envoie ton score PC et des évènements d'usage (optimisations appliquées) pour nous aider à améliorer le produit. Aucune donnée personnelle, aucun fichier. Désactivé par défaut.
-                  </p>
+              <div className="grid-2">
+                <QuickMeasure />
+                <div className="card">
+                  <div className="card-head"><h2>Monitoring temps réel</h2></div>
+                  <p className="lead" style={{ marginBottom: 14 }}>Charge réelle du système, rafraîchie en continu.</p>
+                  <LiveMonitor cpuHist={cpuHist} ramHist={ramHist} tempHist={tempHist} live={live} />
                 </div>
-                <label className="switch">
-                  <input type="checkbox" checked={telemetry} onChange={toggleTelemetry} />
-                  <span className="slider" />
-                </label>
               </div>
-            </div>
-          </section>
-        )}
+
+              <div className="card">
+                <div className="card-head"><h2>Game Boost</h2></div>
+                <p className="lead">Lance ton jeu puis booste-le : priorité CPU haute, restaurée automatiquement à la fermeture.</p>
+                <div className="games">
+                  {["FiveM", "Fortnite", "Valorant", "CS2", "Warzone", "Apex Legends"].map((g) => {
+                    const installed = scan?.games?.some((x) => x.name === g);
+                    return (
+                      <button key={g} className={installed ? "game on" : "game"} onClick={() => boost(g)}>
+                        <b>{g}</b>
+                        {installed
+                          ? <span className="installed"><IconCheck width={12} height={12} /> détecté</span>
+                          : <span className="not">booster si lancé</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          {tab === "optims" && (
+            <>
+              <div className="card">
+                <div className="apply-bar">
+                  <div className="seg">
+                    <button className={optView === "reco" ? "on" : ""} onClick={() => setOptView("reco")}>Recommandé</button>
+                    <button className={optView === "avance" ? "on" : ""} onClick={() => setOptView("avance")}>Avancé</button>
+                  </div>
+                  <div className="apply-bar" style={{ gap: 14 }}>
+                    <span className="count-pill">{selected.length} sélectionné(s)</span>
+                    <button className="btn primary" disabled={!selected.length || busy} onClick={applySelected}>
+                      {busy ? <span className="spin" /> : <IconBolt />}
+                      {busy ? "Application…" : "Appliquer"}
+                    </button>
+                  </div>
+                </div>
+                <p className="lead" style={{ marginTop: 12 }}>
+                  Un point de restauration Windows est créé avant chaque application. Si ça échoue, rien n'est modifié.
+                </p>
+
+                {optView === "reco" ? (
+                  <TweakList tweaks={recoTweaks} selected={selected} setSelected={setSelected} locked={false} />
+                ) : (
+                  <>
+                    <TweakList tweaks={advFree} selected={selected} setSelected={setSelected} locked={false} />
+                    {advFree.length === 0 && <p className="empty">Rien ici — tout est dans Recommandé.</p>}
+                  </>
+                )}
+              </div>
+
+              <div className="card pro">
+                <div className="card-head">
+                  <h2><IconGem width={18} height={18} style={{ verticalAlign: "-3px", marginRight: 6, color: "var(--pulse-2)" }} />Optimisations Pro</h2>
+                  {isPro && <span className="pro-active"><IconCheck /> Licence active</span>}
+                </div>
+                <TweakList tweaks={proTweaks} selected={selected} setSelected={setSelected} locked={!isPro} />
+                {!isPro && (
+                  <div className="activate">
+                    <ul className="pro-perks">
+                      <li><IconCheck /> Tweaks réseau & latence (Nagle, DNS rapide)</li>
+                      <li><IconCheck /> Mémoire, SysMain, GPU scheduling matériel</li>
+                      <li><IconCheck /> Analyse IA détaillée de ton matériel</li>
+                    </ul>
+                    {!discordName && !logged ? (
+                      <>
+                        <p className="muted">Connecte-toi avec Discord, puis active ta clé. La clé se lie à ton compte (pas au PC).</p>
+                        <button className="btn discord" onClick={loginDiscord} disabled={busy}>
+                          <IconDiscord />{busy ? "Ouverture…" : "Se connecter avec Discord"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="muted">{discordName ? `Connecté : ${discordName}. ` : ""}Colle ta clé pour débloquer le Pro.</p>
+                        <div className="activate-row">
+                          <input
+                            className="key-field"
+                            placeholder="PB-XXXX-XXXX-XXXX-XXXX"
+                            value={keyInput}
+                            onChange={(e) => setKeyInput(e.target.value.toUpperCase())}
+                            maxLength={22}
+                          />
+                          <button className="btn pro-cta" onClick={redeem} disabled={busy || keyInput.length < 10}>
+                            {busy ? "Activation…" : "Activer"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {tab === "securite" && (
+            <>
+              <TrustStrip />
+              <div className="card">
+                <div className="row-between">
+                  <div>
+                    <h2>Journal des modifications</h2>
+                    <p className="lead">Chaque changement est listé avec sa valeur d'origine. Le rollback restaure tout, dans l'ordre inverse.</p>
+                  </div>
+                  <button className="btn danger" onClick={rollback} disabled={busy || !log.length}>
+                    <IconUndo /> Tout annuler
+                  </button>
+                </div>
+                {log.length === 0
+                  ? <p className="empty">Aucune modification pour l'instant. Applique une optimisation pour la voir apparaître ici.</p>
+                  : <table className="log">
+                      <thead><tr><th>Quand</th><th>Optimisation</th><th>Cible</th><th>Avant</th><th>Après</th></tr></thead>
+                      <tbody>{log.map((e, i) => (
+                        <tr key={i}>
+                          <td>{new Date(e.quand).toLocaleString("fr-FR")}</td>
+                          <td>{e.optimisation}</td>
+                          <td className="mono">{e.cible}</td>
+                          <td className="mono">{JSON.stringify(e.avant)}</td>
+                          <td className="mono">{JSON.stringify(e["après"])}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>}
+              </div>
+
+              <div className="card">
+                <div className="row-between">
+                  <div>
+                    <h2>Statistiques d'usage anonymes</h2>
+                    <p className="lead" style={{ maxWidth: 540 }}>
+                      Optionnel. Si tu actives, l'app envoie ton score PC et des évènements d'usage (optimisations appliquées) pour nous aider à améliorer le produit. Aucune donnée personnelle, aucun fichier. Désactivé par défaut.
+                    </p>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={telemetry} onChange={toggleTelemetry} />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </main>
 
       {churnOpen && <ChurnSurvey onSubmit={sendChurn} onClose={() => setChurnOpen(false)} />}
+      {toast && <div className="toast"><IconCheck /> {toast}</div>}
+    </div>
+  );
+}
 
-      {toast && <div className="toast">{toast}</div>}
+function TrustStrip() {
+  return (
+    <div className="trust">
+      <span><IconShield width={15} height={15} /> Point de restauration avant chaque action</span>
+      <span><IconUndo width={15} height={15} /> 100 % réversible en 1 clic</span>
+      <span><IconCheck width={15} height={15} /> Chaque modification journalisée</span>
     </div>
   );
 }
@@ -343,6 +504,7 @@ export default function App() {
 function TweakList({ tweaks, selected, setSelected, locked }) {
   const toggle = (id) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  if (!tweaks.length) return null;
   return (
     <ul className="tweaks">
       {tweaks.map((t) => (
@@ -355,10 +517,11 @@ function TweakList({ tweaks, selected, setSelected, locked }) {
               onChange={() => toggle(t.id)}
             />
             <span className="tweak-main">
+              <span className="tweak-cat">{t.category}</span>
               <b>{t.label}</b>
               <small>{t.description}</small>
             </span>
-            <span className="impact">{t.applied ? "déjà actif" : t.impact}</span>
+            <span className={"impact" + (t.applied ? " done" : "")}>{t.applied ? "déjà actif" : t.impact}</span>
             {locked && <span className="lock">PRO</span>}
           </label>
         </li>

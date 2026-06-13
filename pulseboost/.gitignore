@@ -1,0 +1,15 @@
+# Dépendances et artefacts de build
+node_modules/
+dist/
+package-lock.json
+
+# Rust / Tauri
+src-tauri/target/
+
+# Serveur
+server/node_modules/
+server/pulseboost.db
+
+# Secrets — ne jamais commit
+.env
+*.pem

@@ -2,7 +2,7 @@
 // 40 segments sur un arc de 240°, aiguille animée par spring CSS.
 import React, { useEffect, useState } from "react";
 
-export default function ScoreGauge({ value = 0, color = "var(--ok)" }) {
+export default function ScoreGauge({ value = 0, color = "var(--ok)", tier = "" }) {
   const [shown, setShown] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setShown(value), 150); // anim au montage
@@ -49,6 +49,7 @@ export default function ScoreGauge({ value = 0, color = "var(--ok)" }) {
       <div className="gauge-value">
         <span className="num" style={{ color }}>{shown}</span>
         <span className="of">/ 100</span>
+        {tier && <span className="gauge-tier" style={{ color }}>{tier}</span>}
       </div>
     </div>
   );
