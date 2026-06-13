@@ -1,0 +1,183 @@
+/* PulseBoost — système de design
+   Palette : Carbone #0B0A12 · Panneau #16131F · Pulse (violet) #8B5CF6
+             Data (cyan) #22D3EE · OK #34D399 · Warn #F59E0B · Bad #F43F5E
+   Type :   Space Grotesk (display) · Inter (texte) · JetBrains Mono (valeurs)
+   Polices : à embarquer en local dans /public/fonts pour le build offline. */
+
+:root {
+  --bg: #0b0a12;
+  --panel: rgba(22, 19, 31, 0.72);
+  --panel-border: rgba(139, 92, 246, 0.16);
+  --pulse: #8b5cf6;
+  --data: #22d3ee;
+  --ok: #34d399;
+  --warn: #f59e0b;
+  --bad: #f43f5e;
+  --text: #e9e6f2;
+  --muted: #8d87a3;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; margin: 0; }
+html, body, #root { height: 100%; }
+body {
+  background:
+    radial-gradient(900px 500px at 85% -10%, rgba(139, 92, 246, 0.14), transparent 60%),
+    radial-gradient(700px 400px at -10% 110%, rgba(34, 211, 238, 0.07), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font: 14px/1.55 "Inter", "Segoe UI", system-ui, sans-serif;
+}
+h1, h2 { font-family: "Space Grotesk", "Segoe UI", sans-serif; letter-spacing: -0.01em; }
+h1 { font-size: 24px; } h2 { font-size: 17px; margin-bottom: 8px; }
+.mono, .num { font-family: "JetBrains Mono", Consolas, monospace; }
+
+.shell { display: grid; grid-template-columns: 200px 1fr; height: 100vh; }
+
+/* --- Rail latéral --- */
+.rail {
+  display: flex; flex-direction: column; gap: 24px;
+  padding: 20px 14px; border-right: 1px solid var(--panel-border);
+}
+.logo { font-family: "Space Grotesk"; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+.logo-pulse {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--pulse);
+  box-shadow: 0 0 12px var(--pulse); animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse { 50% { box-shadow: 0 0 3px var(--pulse); opacity: 0.6; } }
+.nav {
+  display: block; width: 100%; text-align: left; padding: 9px 12px; margin-bottom: 4px;
+  background: none; border: none; border-radius: 9px; color: var(--muted);
+  font: inherit; cursor: pointer;
+}
+.nav:hover { color: var(--text); background: rgba(139, 92, 246, 0.08); }
+.nav.on { color: var(--text); background: rgba(139, 92, 246, 0.16); }
+.rail-foot { margin-top: auto; display: grid; gap: 6px; }
+.stat-mini {
+  display: flex; justify-content: space-between; padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03); border-radius: 8px; font-size: 12px;
+}
+.stat-mini b { font-family: "JetBrains Mono"; color: var(--data); }
+
+/* --- Contenu --- */
+.content { overflow-y: auto; padding: 26px; }
+.card {
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); padding: 20px; margin-bottom: 18px;
+  backdrop-filter: blur(14px);
+}
+.hero { display: flex; gap: 28px; align-items: center; }
+.hero-side { flex: 1; }
+.grid-pulse {} 
+
+/* --- Jauge --- */
+.gauge { position: relative; flex: 0 0 260px; }
+.gauge-value { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding-top: 30px; }
+.gauge-value .num { font-size: 44px; font-weight: 700; }
+.gauge-value .of { font-size: 12px; color: var(--muted); }
+
+.reasons { list-style: none; margin: 10px 0 16px; display: grid; gap: 6px; }
+.reasons .dot {
+  font-family: "JetBrains Mono"; font-size: 11px; padding: 2px 7px; border-radius: 6px;
+  margin-right: 8px; background: rgba(244, 63, 94, 0.14); color: var(--bad);
+}
+.reasons .dot.important { background: rgba(245, 158, 11, 0.14); color: var(--warn); }
+.reasons .dot.optionnel, .reasons .dot.matériel { background: rgba(34, 211, 238, 0.12); color: var(--data); }
+
+/* --- Boutons --- */
+.btn {
+  font: inherit; border: none; border-radius: 10px; padding: 10px 16px;
+  cursor: pointer; color: var(--text); background: rgba(255, 255, 255, 0.06);
+}
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--pulse); box-shadow: 0 4px 22px rgba(139, 92, 246, 0.35); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.1); }
+.btn.danger { background: rgba(244, 63, 94, 0.16); color: var(--bad); border: 1px solid rgba(244, 63, 94, 0.3); }
+.btn.pro-cta { margin-top: 12px; background: linear-gradient(90deg, var(--pulse), var(--data)); font-weight: 600; }
+.btn:focus-visible { outline: 2px solid var(--data); outline-offset: 2px; }
+
+/* --- Game Boost --- */
+.games { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.game {
+  font: inherit; padding: 10px 14px; border-radius: 10px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid transparent; color: var(--muted);
+}
+.game.on { color: var(--text); border-color: var(--panel-border); }
+.game .installed { display: block; font-size: 10px; color: var(--ok); }
+
+/* --- Tweaks --- */
+.tweaks { list-style: none; display: grid; gap: 8px; margin-top: 12px; }
+.tweak label { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); cursor: pointer; }
+.tweak.done label { opacity: 0.55; }
+.tweak-main { flex: 1; display: grid; }
+.tweak-main small { color: var(--muted); }
+.impact { font-size: 11px; color: var(--data); font-family: "JetBrains Mono"; max-width: 180px; text-align: right; }
+.lock { font-size: 10px; font-weight: 700; color: var(--pulse); border: 1px solid var(--pulse); padding: 2px 6px; border-radius: 6px; }
+
+/* --- Reco IA, journal, divers --- */
+.reco { list-style: none; display: grid; gap: 10px; margin-top: 10px; }
+.badge { font-size: 10px; padding: 2px 7px; border-radius: 6px; margin-left: 6px; }
+.badge.critique { background: rgba(244,63,94,.15); color: var(--bad); }
+.badge.important { background: rgba(245,158,11,.15); color: var(--warn); }
+.badge.optionnel { background: rgba(34,211,238,.12); color: var(--data); }
+.honest { color: var(--warn); font-size: 13px; margin: 8px 0; }
+.log { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+.log th, .log td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.log th { color: var(--muted); font-weight: 500; }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.muted { color: var(--muted); } .empty { color: var(--muted); padding: 18px 0; }
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: #1d1930; border: 1px solid var(--panel-border); border-radius: 12px;
+  padding: 12px 18px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); max-width: 80vw;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, .logo-pulse { animation: none !important; transition: none !important; }
+}
+@media (max-width: 980px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail { flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--panel-border); }
+  .rail-foot { margin: 0 0 0 auto; display: flex; }
+  .hero { flex-direction: column; }
+}
+
+/* --- Activation licence --- */
+.activate { margin-top: 14px; }
+.activate-row { display: flex; gap: 10px; margin-top: 8px; }
+.key-field {
+  flex: 1; font-family: "JetBrains Mono", monospace; letter-spacing: 2px;
+  padding: 11px 14px; border-radius: 10px; background: rgba(255,255,255,0.04);
+  border: 1px solid var(--panel-border); color: var(--text); text-transform: uppercase;
+}
+.key-field:focus-visible { outline: 2px solid var(--data); outline-offset: 1px; }
+.pro-active { color: var(--ok); margin-top: 12px; font-weight: 600; }
+
+/* --- Login Discord + écran verrouillé --- */
+.btn.discord { background: #5865F2; font-weight: 600; margin-top: 8px; }
+.btn.discord:hover:not(:disabled) { filter: brightness(1.08); }
+.locked { height: 100vh; display: grid; place-content: center; text-align: center; padding: 24px; }
+.lock-card {
+  background: var(--panel); border: 1px solid rgba(244,63,94,.3); border-radius: 16px;
+  padding: 40px 48px; max-width: 460px; backdrop-filter: blur(14px);
+}
+.lock-ico { font-size: 52px; color: var(--bad); display: block; margin-bottom: 8px; }
+.lock-card h1 { color: var(--bad); margin-bottom: 10px; }
+.lock-card p { margin-bottom: 8px; }
+
+/* --- Toggle télémétrie --- */
+.switch { position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; inset: 0; background: rgba(255,255,255,.12); border-radius: 26px; transition: .2s; cursor: pointer; }
+.slider::before { content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+.switch input:checked + .slider { background: var(--pulse); }
+.switch input:checked + .slider::before { transform: translateX(20px); }
+
+/* --- Modal churn --- */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 24px; z-index: 60; }
+.modal-box { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 16px; padding: 24px; max-width: 460px; width: 100%; backdrop-filter: blur(14px); }
+.modal-box h2 { margin-bottom: 6px; }
+.churn-reasons { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.chip { font: inherit; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--panel-border); background: rgba(255,255,255,.03); color: var(--muted); cursor: pointer; }
+.chip.on { color: var(--text); border-color: var(--pulse); background: rgba(139,92,246,.16); }
+.churn-comment { width: 100%; min-height: 70px; resize: vertical; background: rgba(255,255,255,.04); border: 1px solid var(--panel-border); border-radius: 10px; color: var(--text); padding: 10px; font: inherit; margin-bottom: 14px; }

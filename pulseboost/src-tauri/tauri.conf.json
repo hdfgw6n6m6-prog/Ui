@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PulseBoost",
+  "version": "0.1.0",
+  "identifier": "com.pulseboost.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PulseBoost",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 980,
+        "minHeight": 640,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": { "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "nsis": { "installMode": "perMachine", "languages": ["French"] },
+      "certificateThumbprint": null,
+      "_comment": "Renseigner certificateThumbprint avec votre certificat EV/OV de signature de code avant release publique."
+    }
+  }
+}

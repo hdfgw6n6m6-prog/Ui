@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PulseBoost — Panel</title>
+<style>
+  :root{--bg:#0b0a12;--panel:#16131f;--bd:rgba(139,92,246,.16);--pulse:#8b5cf6;--data:#22d3ee;
+        --ok:#34d399;--warn:#f59e0b;--bad:#f43f5e;--text:#e9e6f2;--muted:#8d87a3}
+  *{box-sizing:border-box;margin:0}
+  body{background:radial-gradient(900px 500px at 85% -10%,rgba(139,92,246,.14),transparent 60%),var(--bg);
+       color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif}
+  .wrap{display:grid;grid-template-columns:190px 1fr;min-height:100vh}
+  .rail{border-right:1px solid var(--bd);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+  .brand{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;margin-bottom:18px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--pulse);box-shadow:0 0 10px var(--pulse)}
+  .nav{text-align:left;background:none;border:none;color:var(--muted);font:inherit;padding:9px 12px;border-radius:8px;cursor:pointer}
+  .nav:hover{background:rgba(139,92,246,.08);color:var(--text)} .nav.on{background:rgba(139,92,246,.16);color:var(--text)}
+  main{padding:22px;overflow:auto}
+  h1{font-size:20px;margin-bottom:14px} h2{font-size:15px;margin-bottom:10px}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .stat{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px}
+  .stat b{font-size:26px;display:block} .stat span{color:var(--muted);font-size:12px}
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);white-space:nowrap}
+  th{color:var(--muted);font-weight:500} td.mono,code{font-family:ui-monospace,Consolas,monospace}
+  .btn{font:inherit;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;color:var(--text);background:rgba(255,255,255,.06)}
+  .btn.primary{background:var(--pulse)} .btn.bad{background:rgba(244,63,94,.16);color:var(--bad);border:1px solid rgba(244,63,94,.3)}
+  .btn.sm{padding:4px 9px;font-size:12px}
+  input,select{font:inherit;background:rgba(255,255,255,.04);border:1px solid var(--bd);color:var(--text);border-radius:8px;padding:8px 10px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:6px} .pill.info{background:rgba(34,211,238,.14);color:var(--data)}
+  .pill.warn{background:rgba(245,158,11,.14);color:var(--warn)} .pill.bad{background:rgba(244,63,94,.14);color:var(--bad)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--ok)}
+  .alert{display:flex;justify-content:space-between;gap:10px;padding:9px 12px;border-radius:9px;background:rgba(255,255,255,.03);margin-bottom:6px;border-left:3px solid var(--muted)}
+  .alert.warn{border-color:var(--warn)} .alert.bad{border-color:var(--bad)} .alert.info{border-color:var(--data)}
+  .hide{display:none} .muted{color:var(--muted)}
+  .live{margin-left:auto;font-size:11px;color:var(--ok)}
+  @media(max-width:780px){.wrap{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;padding:24px;z-index:50}
+  .modal-card{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:22px;max-width:760px;width:100%;max-height:86vh;overflow:auto}
+  .bars{display:flex;flex-direction:column;gap:6px}
+  .bar-row{display:grid;grid-template-columns:140px 1fr 48px;align-items:center;gap:8px;font-size:12.5px}
+  .bar-track{height:18px;background:rgba(255,255,255,.05);border-radius:5px;overflow:hidden}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--pulse),var(--data));border-radius:5px}
+  .spark{display:flex;align-items:flex-end;gap:3px;height:90px}
+  .spark .s{flex:1;background:var(--pulse);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;font-size:13px;margin:8px 0}
+  .kv span{color:var(--muted)} .timeline{font-size:12px;max-height:200px;overflow:auto}
+  .timeline div{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>PulseBoost</div>
+    <button class="nav on" data-tab="dash">Tableau de bord</button>
+    <button class="nav" data-tab="analytics">Analytics</button>
+    <button class="nav" data-tab="churn">Churn</button>
+    <button class="nav" data-tab="keys">Clés</button>
+    <button class="nav" data-tab="users">Utilisateurs</button>
+    <button class="nav" data-tab="logs">Logs</button>
+    <button class="nav" data-tab="blacklist">Blacklist</button>
+    <button class="nav" data-tab="flags">Features</button>
+    <span class="live" id="live">● live</span>
+  </nav>
+  <main>
+    <!-- DASH -->
+    <section id="dash">
+      <h1>Tableau de bord</h1>
+      <div class="cards">
+        <div class="stat"><b id="s-users">–</b><span>Utilisateurs</span></div>
+        <div class="stat"><b id="s-active">–</b><span>Abonnements actifs</span></div>
+        <div class="stat"><b id="s-keys">–</b><span>Clés générées</span></div>
+        <div class="stat"><b id="s-alerts">–</b><span>Alertes ouvertes</span></div>
+      </div>
+      <div class="card">
+        <h2>Alertes en temps réel</h2>
+        <div id="alerts"></div>
+      </div>
+    </section>
+
+    <!-- ANALYTICS -->
+    <section id="analytics" class="hide">
+      <h1>Analytics</h1>
+      <div class="cards" style="grid-template-columns:repeat(6,1fr)">
+        <div class="stat"><b id="a-dau">–</b><span>Actifs 24h</span></div>
+        <div class="stat"><b id="a-wau">–</b><span>Actifs 7j</span></div>
+        <div class="stat"><b id="a-new">–</b><span>Nouveaux 7j</span></div>
+        <div class="stat"><b id="a-conv">–</b><span>Conversion Pro</span></div>
+        <div class="stat"><b id="a-score">–</b><span>Score moyen PC</span></div>
+        <div class="stat"><b id="a-churn">–</b><span>Churn 30j</span></div>
+      </div>
+      <div class="card"><h2>Activité (14 jours)</h2><div id="chart-active"></div></div>
+      <div class="card"><h2>Activations / jour (14 jours)</h2><div id="chart-redeem"></div></div>
+      <div class="card"><h2>Optimisations les plus appliquées</h2><div id="top-tweaks"></div></div>
+      <div class="card"><h2>Répartition des plans</h2><div id="plan-mix"></div></div>
+    </section>
+
+    <!-- CHURN -->
+    <section id="churn" class="hide">
+      <h1>Churn — pourquoi ils partent</h1>
+      <div class="card"><h2>Raisons de désabonnement</h2><div id="churn-reasons"></div></div>
+      <div class="card"><h2>Expire dans &lt; 7 jours (à relancer)</h2>
+        <table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expire</th><th></th></tr></thead><tbody id="churn-expiring"></tbody></table></div>
+      <div class="card"><h2>Déjà churn</h2>
+        <table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expiré le</th><th></th></tr></thead><tbody id="churn-churned"></tbody></table></div>
+      <div class="card"><h2>Retours récents</h2><div id="churn-recent"></div></div>
+    </section>
+
+    <!-- KEYS -->
+    <section id="keys" class="hide">
+      <h1>Clés</h1>
+      <div class="card">
+        <h2>Générer</h2>
+        <div class="row">
+          <select id="k-plan"><option value="monthly">Mensuel (30j)</option><option value="lifetime">Lifetime</option></select>
+          <input id="k-qty" type="number" value="1" min="1" max="100" style="width:80px" />
+          <input id="k-dm" placeholder="DM à (ID Discord, optionnel)" style="width:200px" />
+          <input id="k-note" placeholder="note (optionnel)" style="flex:1;min-width:140px" />
+          <button class="btn primary" onclick="genKeys()">Générer</button>
+        </div>
+        <div id="k-out" class="mono muted"></div>
+      </div>
+      <div class="card">
+        <div class="row"><h2 style="margin:0">Toutes les clés</h2>
+          <input id="k-search" placeholder="filtrer…" oninput="renderKeys()" style="margin-left:auto" /></div>
+        <table><thead><tr><th>Clé</th><th>Plan</th><th>Compte Discord</th><th>Expire</th><th>État</th><th></th></tr></thead>
+        <tbody id="k-rows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- USERS -->
+    <section id="users" class="hide">
+      <h1>Utilisateurs</h1>
+      <div class="card">
+        <table><thead><tr><th>Discord</th><th>ID</th><th>Plan</th><th>Appareils</th><th>Dernier login</th><th>Accès</th></tr></thead>
+        <tbody id="u-rows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section id="logs" class="hide">
+      <h1>Logs complets</h1>
+      <div class="card"><table><thead><tr><th>Quand</th><th>Type</th><th>Discord</th><th>Détail</th><th>IP</th></tr></thead>
+      <tbody id="l-rows"></tbody></table></div>
+    </section>
+
+    <!-- BLACKLIST -->
+    <section id="blacklist" class="hide">
+      <h1>Blacklist anti-crack</h1>
+      <p class="muted" style="margin-bottom:12px">Postes (HWID) bloqués suite à une falsification détectée, ou ajoutés manuellement. Un HWID blacklisté est refusé hors-ligne (marqueur local) ET en ligne (ce serveur). Les clés du compte associé sont révoquées.</p>
+      <div class="card">
+        <div class="row">
+          <input id="bl-hwid" placeholder="HWID (hash) à bloquer" style="flex:1;min-width:200px" />
+          <input id="bl-reason" placeholder="raison" />
+          <button class="btn bad" onclick="addBl()">Blacklister</button>
+        </div>
+        <table><thead><tr><th>HWID</th><th>Compte</th><th>Raison</th><th>Quand</th><th></th></tr></thead>
+        <tbody id="bl-rows"></tbody></table>
+      </div>
+    </section>
+
+    <!-- FLAGS -->
+    <section id="flags" class="hide">
+      <h1>Feature flags</h1>
+      <p class="muted" style="margin-bottom:12px">Active/désactive des modules à distance, ou change leur portée (gratuit / Pro). Appliqué au prochain heartbeat des clients.</p>
+      <div class="card"><table><thead><tr><th>Module</th><th>Actif</th><th>Portée</th></tr></thead>
+      <tbody id="f-rows"></tbody></table></div>
+    </section>
+  </main>
+</div>
+<div id="modal" class="modal hide" onclick="if(event.target===this)closeModal()">
+  <div class="modal-card" id="modal-body"></div>
+</div>
+
+<script>
+const api = (p, body) => fetch(p, body ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) } : {})
+  .then(r => { if (r.status===401) location.href="/admin/login"; return r.json(); });
+
+// navigation
+let KEYS=[], USERS=[];
+document.querySelectorAll(".nav").forEach(n => n.onclick = () => {
+  document.querySelectorAll(".nav").forEach(x=>x.classList.remove("on")); n.classList.add("on");
+  ["dash","analytics","churn","keys","users","logs","blacklist","flags"].forEach(t => document.getElementById(t).classList.toggle("hide", t!==n.dataset.tab));
+  if (n.dataset.tab==="analytics") loadAnalytics();
+  if (n.dataset.tab==="churn") loadChurn();
+  if (n.dataset.tab==="keys") loadKeys();
+  if (n.dataset.tab==="users") loadUsers();
+  if (n.dataset.tab==="logs") loadLogs();
+  if (n.dataset.tab==="blacklist") loadBl();
+  if (n.dataset.tab==="flags") loadFlags();
+});
+
+// helpers graphiques (zéro dépendance)
+function spark(el, data){ const max=Math.max(1,...data.map(d=>d.c));
+  el.innerHTML = `<div class="spark">${data.map(d=>`<div class="s" style="height:${Math.round(d.c/max*100)}%" title="${d.d}: ${d.c}"></div>`).join("")}</div>
+    <div class="muted" style="font-size:11px;margin-top:4px;display:flex;justify-content:space-between"><span>${data[0]?.d||""}</span><span>${data.at(-1)?.d||""}</span></div>`; }
+function bars(el, rows, label){ const max=Math.max(1,...rows.map(r=>r.c));
+  el.innerHTML = rows.length? `<div class="bars">${rows.map(r=>`<div class="bar-row"><span class="mono">${label(r)}</span>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.c/max*100)}%"></div></div><b>${r.c}</b></div>`).join("")}</div>`
+    : '<p class="muted">Pas encore de données.</p>'; }
+
+async function loadAnalytics(){ const a=await api("/admin/api/analytics");
+  a_dau.textContent=a.dau; a_wau.textContent=a.wau; a_new.textContent=a.newUsers;
+  a_conv.textContent=a.conversion+"%"; a_score.textContent=a.avgScore??"–"; a_churn.textContent=a.churned30;
+  spark(document.getElementById("chart-active"), a.activeByDay);
+  spark(document.getElementById("chart-redeem"), a.redeemsByDay);
+  bars(document.getElementById("top-tweaks"), a.topTweaks, r=>r.detail||"?");
+  bars(document.getElementById("plan-mix"), a.planMix, r=>r.plan);
+}
+
+async function loadChurn(){ const c=await api("/admin/api/churn");
+  bars(document.getElementById("churn-reasons"), c.reasons, r=>r.reason||"(vide)");
+  document.getElementById("churn-expiring").innerHTML = c.expiring.length? c.expiring.map(x=>`<tr>
+    <td>${x.username||x.discord_id}</td><td>${x.plan}</td><td>${new Date(x.expires_at).toLocaleString("fr-FR")}</td>
+    <td><button class="btn sm" onclick="dm('${x.discord_id}')">relancer en DM</button></td></tr>`).join("")
+    : '<tr><td colspan="4" class="muted">Personne n\\'expire bientôt.</td></tr>';
+  document.getElementById("churn-churned").innerHTML = c.churned.length? c.churned.map(x=>`<tr>
+    <td>${x.username||x.discord_id}</td><td>${x.plan}</td><td>${new Date(x.expires_at).toLocaleString("fr-FR")}</td>
+    <td><button class="btn sm" onclick="dm('${x.discord_id}')">offre retour</button></td></tr>`).join("")
+    : '<tr><td colspan="4" class="muted">Aucun churn.</td></tr>';
+  document.getElementById("churn-recent").innerHTML = c.recent.length? c.recent.map(r=>`<div class="alert info">
+    <span><b>${r.username||"?"}</b> — ${r.reason} ${r.comment?`· <span class="muted">${r.comment}</span>`:""}</span>
+    <span class="muted">${new Date(r.at).toLocaleDateString("fr-FR")}</span></div>`).join("")
+    : '<p class="muted">Aucun retour pour l\\'instant.</p>'; }
+
+// analyse détaillée d'un client
+async function detail(id){ const d=await api("/admin/api/user?discord_id="+id);
+  const s=d.snapshot, hw=s?.hw||{};
+  document.getElementById("modal-body").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${d.user.username||id}</h2>
+      <button class="btn sm" onclick="closeModal()">fermer</button></div>
+    <div class="kv">
+      <span>Discord ID</span><b class="mono">${id}</b>
+      <span>Plan actuel</span><b>${d.keys.find(k=>!k.revoked&&(!k.expires_at||new Date(k.expires_at)>new Date()))?.plan||"free"}</b>
+      <span>Score PC</span><b>${s?.score??"–"}/100</b>
+      <span>Appareils</span><b>${d.devices.length}</b>
+      <span>CPU</span><b>${hw.cpu?.name||"–"}</b>
+      <span>GPU</span><b>${hw.gpu?.name||"–"}</b>
+      <span>RAM</span><b>${hw.ram?.total_gb?hw.ram.total_gb+" GB":"–"}</b>
+      <span>Dernière analyse</span><b>${s?.last_seen?new Date(s.last_seen).toLocaleString("fr-FR"):"–"}</b>
+    </div>
+    ${d.feedback.length?`<h2>Feedback désabonnement</h2>${d.feedback.map(f=>`<div class="alert warn"><span>${f.reason} — ${f.comment||""}</span><span class="muted">${new Date(f.at).toLocaleDateString("fr-FR")}</span></div>`).join("")}`:""}
+    <h2>Clés</h2><table><thead><tr><th>Clé</th><th>Plan</th><th>Expire</th><th>État</th></tr></thead><tbody>
+      ${d.keys.map(k=>`<tr><td class="mono">${k.key}</td><td>${k.plan}</td><td>${k.expires_at?new Date(k.expires_at).toLocaleDateString("fr-FR"):"–"}</td><td>${k.revoked?'<span class="pill bad">révoquée</span>':'<span class="pill ok">active</span>'}</td></tr>`).join("")||'<tr><td colspan="4" class="muted">aucune</td></tr>'}
+    </tbody></table>
+    <h2>Activité récente</h2><div class="timeline">${d.events.map(e=>`<div><span class="mono muted">${new Date(e.at).toLocaleString("fr-FR")}</span> · ${e.type}${e.detail?" — "+e.detail:""}</div>`).join("")||'<p class="muted">aucun évènement</p>'}</div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn sm" onclick="dm('${id}')">DM Discord</button>
+      <button class="btn sm" onclick="role('${id}','add')">rôle Pro+</button>
+      <button class="btn sm bad" onclick="ban('${id}',1);closeModal()">stop / bannir</button>
+    </div>`;
+  document.getElementById("modal").classList.remove("hide");
+}
+function closeModal(){ document.getElementById("modal").classList.add("hide"); }
+
+async function loadBl(){ const b=await api("/admin/api/blacklist");
+  document.getElementById("bl-rows").innerHTML = b.length ? b.map(x=>`<tr>
+    <td class="mono">${x.hwid.slice(0,20)}…</td><td class="mono">${x.discord_id||"–"}</td>
+    <td>${x.reason||""}</td><td>${new Date(x.at).toLocaleString("fr-FR")}</td>
+    <td><button class="btn sm" onclick="rmBl('${x.hwid}')">retirer</button></td></tr>`).join("")
+    : '<tr><td colspan="5" class="muted">Aucun poste blacklisté.</td></tr>'; }
+async function addBl(){ const hwid=document.getElementById("bl-hwid").value.trim(); if(!hwid)return;
+  await api("/admin/api/blacklist",{hwid,reason:document.getElementById("bl-reason").value||"manuel"}); loadBl(); }
+async function rmBl(hwid){ await api("/admin/api/unblacklist",{hwid}); loadBl(); }
+
+async function loadStats(){ const s=await api("/admin/api/stats");
+  s_users.textContent=s.users; s_active.textContent=s.active; s_keys.textContent=s.keys; s_alerts.textContent=s.alerts; }
+async function loadAlerts(){ const a=await api("/admin/api/alerts"); renderAlerts(a); }
+function renderAlerts(list){ document.getElementById("alerts").innerHTML = list.length ? list.map(a=>`
+  <div class="alert ${a.level}">
+    <span><span class="pill ${a.level}">${a.level}</span> ${a.message} <span class="muted">· ${new Date(a.at).toLocaleString("fr-FR")}</span></span>
+    ${a.resolved?'<span class="muted">résolu</span>':`<button class="btn sm" onclick="resolveAlert(${a.id})">OK</button>`}
+  </div>`).join("") : '<p class="muted">Aucune alerte.</p>'; }
+async function resolveAlert(id){ await api("/admin/api/alerts/resolve",{id}); loadAlerts(); }
+
+// flux SSE alertes temps réel
+const es = new EventSource("/admin/api/alerts/stream");
+es.onmessage = e => { loadAlerts(); loadStats(); document.getElementById("live").style.opacity=.4; setTimeout(()=>document.getElementById("live").style.opacity=1,300); };
+
+// clés
+async function loadKeys(){ KEYS = await api("/admin/api/keys"); renderKeys(); }
+function renderKeys(){ const q=(document.getElementById("k-search").value||"").toLowerCase();
+  document.getElementById("k-rows").innerHTML = KEYS.filter(k=>JSON.stringify(k).toLowerCase().includes(q)).map(k=>{
+    const state = k.revoked?'<span class="pill bad">révoquée</span>':k.discord_id?'<span class="pill ok">active</span>':'<span class="pill info">libre</span>';
+    return `<tr><td class="mono">${k.key}</td><td>${k.plan}</td><td class="mono">${k.discord_id||"–"}</td>
+      <td>${k.expires_at?new Date(k.expires_at).toLocaleDateString("fr-FR"):"–"}</td><td>${state}</td>
+      <td>${k.revoked?"":`<button class="btn sm bad" onclick="revoke('${k.key}')">révoquer</button>
+      <button class="btn sm" onclick="unbind('${k.key}')">délier</button>`}</td></tr>`;
+  }).join(""); }
+async function genKeys(){ const r=await api("/admin/api/keys",{plan:k_plan.value,qty:+k_qty.value,note:k_note.value||null,dm_to:document.getElementById("k-dm").value.trim()||null});
+  document.getElementById("k-out").textContent = r.keys.join("  ·  "); loadKeys(); loadStats(); }
+async function revoke(key){ await api("/admin/api/revoke",{key}); loadKeys(); }
+async function unbind(key){ await api("/admin/api/unbind",{key}); loadKeys(); }
+
+// utilisateurs : accès complet (stop / commandes)
+async function loadUsers(){ USERS = await api("/admin/api/users");
+  document.getElementById("u-rows").innerHTML = USERS.map(u=>`
+    <tr><td>${u.username||"–"} ${u.banned?'<span class="pill bad">banni</span>':''}</td>
+    <td class="mono">${u.discord_id}</td><td>${u.plan?`<span class="pill ok">${u.plan}</span>`:'<span class="muted">free</span>'}</td>
+    <td>${u.devices}</td><td>${u.last_login?new Date(u.last_login).toLocaleString("fr-FR"):"–"}</td>
+    <td>
+      <button class="btn sm" onclick="detail('${u.discord_id}')">analyse</button>
+      ${u.banned?`<button class="btn sm" onclick="ban('${u.discord_id}',0)">débannir</button>`
+                :`<button class="btn sm bad" onclick="ban('${u.discord_id}',1)">stop / bannir</button>`}
+      <button class="btn sm" onclick="cmd('${u.discord_id}','force_logout')">déconnecter</button>
+      <button class="btn sm" onclick="msg('${u.discord_id}')">alerte app</button>
+      <button class="btn sm" onclick="dm('${u.discord_id}')">DM Discord</button>
+      <button class="btn sm" onclick="role('${u.discord_id}','add')">rôle Pro+</button>
+      <button class="btn sm" onclick="role('${u.discord_id}','remove')">rôle Pro−</button>
+    </td></tr>`).join(""); }
+async function ban(discord_id,banned){ await api("/admin/api/ban",{discord_id,banned}); loadUsers(); loadStats(); }
+async function cmd(discord_id,type,payload=""){ await api("/admin/api/command",{discord_id,type,payload}); }
+function msg(id){ const m=prompt("Message d'alerte à afficher DANS l'app du client :"); if(m) cmd(id,"alert",m); }
+async function dm(id){ const m=prompt("Message à envoyer en DM Discord (via le bot) :"); if(m){ await api("/admin/api/dm",{discord_id:id,message:m}); } }
+async function role(id,action){ await api("/admin/api/role",{discord_id:id,action}); loadUsers(); }
+
+// logs
+async function loadLogs(){ const l=await api("/admin/api/logs");
+  document.getElementById("l-rows").innerHTML = l.map(x=>`<tr><td>${new Date(x.at).toLocaleString("fr-FR")}</td>
+    <td><span class="pill info">${x.type}</span></td><td class="mono">${x.discord_id||"–"}</td>
+    <td>${x.detail||""}</td><td class="mono">${x.ip||""}</td></tr>`).join(""); }
+
+// feature flags
+async function loadFlags(){ const f=await api("/admin/api/flags");
+  document.getElementById("f-rows").innerHTML = f.map(x=>`<tr><td class="mono">${x.name}</td>
+    <td><input type="checkbox" ${x.enabled?"checked":""} onchange="flag('${x.name}',this.checked,null)"></td>
+    <td><select onchange="flag('${x.name}',${x.enabled},this.value)">
+      <option value="free" ${x.scope==="free"?"selected":""}>gratuit</option>
+      <option value="pro" ${x.scope==="pro"?"selected":""}>Pro</option></select></td></tr>`).join(""); }
+async function flag(name,enabled,scope){ await api("/admin/api/flags",{name,enabled,scope}); }
+
+loadStats(); loadAlerts();
+setInterval(loadStats, 30000);
+</script>
+</body>
+</html>
