@@ -20,6 +20,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as discord from "./discord.js";
+import { startBot } from "./bot.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -561,3 +562,6 @@ app.get("/panel", admin, (req, res) => res.sendFile(path.join(__dirname, "public
 app.get("/", (req, res) => res.redirect("/admin/login"));
 
 app.listen(process.env.PORT ?? 8787, () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
+
+// Bot Discord (gateway) : commandes admin slash. Le panel web reste actif en parallèle.
+startBot({ db, discord, adminIds: ADMIN_IDS, log, alert });
