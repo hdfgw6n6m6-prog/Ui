@@ -36,6 +36,9 @@ async function run() {
   ok(auth.status === 302 && cookie.startsWith("pb_admin="), "login -> cookie");
   ok((await jget("/admin/api/stats")).status === 401, "sans cookie -> 401");
   ok((await fetch(BASE + "/panel", { redirect: "manual" })).status === 302, "/panel non connecté -> redirige");
+  const panelHtml = await (await jget("/panel", cookie)).text();
+  ok(/\.hide\{display:none!important\}/.test(panelHtml), "panel: .hide est prioritaire (modale cachée par défaut)");
+  ok(panelHtml.includes('id="modal" class="modal hide"'), "panel: modale masquée au départ");
 
   console.log("=== CLÉS ===");
   const st = await (await jget("/admin/api/stats", cookie)).json();
