@@ -31,7 +31,8 @@ La conception a évolué en plusieurs pivots. Les décisions importantes :
 1. **Clé API Gemini jamais dans le .exe** → toute l'IA passe par le serveur.
 2. **Pas de promesses de FPS chiffrées** → impact annoncé « faible / moyen / variable ».
    Le score est calculé **localement et déterministiquement** ; l'IA l'explique, ne l'invente pas.
-3. **Login = OAuth Discord** (scope `identify`), pas une saisie de clé au login.
+3. **Login = OAuth Discord** (scope `identify email` — email consenti, affiché par
+   Discord, stocké et conservé), pas une saisie de clé au login.
 4. **La clé se "redeem" après login → liée au compte Discord** (et plus seulement au PC).
    Conséquence : le partage de clé est neutralisé (entitlement par compte).
 5. **Plus de bot à commandes Discord.** Le « bot » est un **effecteur REST** piloté

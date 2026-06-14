@@ -207,7 +207,10 @@
       <section id="users" class="hide">
         <div class="card">
           <div class="between"><h2 style="margin:0">Utilisateurs</h2>
-            <input id="u-search" placeholder="filtrer (pseudo / ID)…" style="width:240px" /></div>
+            <div class="row" style="margin:0">
+              <input id="u-search" placeholder="filtrer (pseudo / ID / email)…" style="width:240px" />
+              <button class="btn sm" id="btn-export-emails">Exporter les emails (CSV)</button>
+            </div></div>
           <table><thead><tr><th>Discord</th><th>ID</th><th>Plan</th><th>Appareils</th><th>Dernier login</th><th>Actions</th></tr></thead>
           <tbody id="u-rows"></tbody></table>
         </div>
@@ -364,9 +367,9 @@ async function unbind(key){ await api("/admin/api/unbind",{key}); toast("Clé d�
 let USERS=[];
 async function loadUsers(){ const u=await api("/admin/api/users"); USERS=u||[]; renderUsers(); }
 function renderUsers(){ const q=($("u-search").value||"").toLowerCase();
-  const rows = USERS.filter(u=>((u.username||"")+" "+u.discord_id).toLowerCase().includes(q));
+  const rows = USERS.filter(u=>((u.username||"")+" "+u.discord_id+" "+(u.email||"")).toLowerCase().includes(q));
   $("u-rows").innerHTML = rows.length ? rows.map(u=>`
-    <tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="avatar" src="${avatarUrl(u.discord_id,u.avatar,32)}" width="24" height="24" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"/>${esc(u.username||"—")}${u.banned?' <span class="pill bad">banni</span>':''}</span></td>
+    <tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="avatar" src="${avatarUrl(u.discord_id,u.avatar,32)}" width="24" height="24" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"/><span>${esc(u.username||"—")}${u.banned?' <span class="pill bad">banni</span>':''}${u.email?`<br><span class="mono muted" style="font-size:11px">${esc(u.email)}</span>`:''}</span></span></td>
     <td class="mono">${esc(u.discord_id)}</td><td>${u.plan?`<span class="pill ok">${esc(u.plan)}</span>`:'<span class="muted">free</span>'}</td>
     <td>${u.devices}</td><td>${dt(u.last_login)}</td>
     <td><div class="row" style="gap:6px;flex-wrap:nowrap">
@@ -385,6 +388,15 @@ async function cmd(discord_id,type,payload=""){ await api("/admin/api/command",{
 function msg(id){ const m=prompt("Message d'alerte à afficher DANS l'app du client :"); if(m) cmd(id,"alert",m); }
 async function dm(id){ const m=prompt("Message à envoyer en DM Discord (via le bot) :"); if(m){ const r=await api("/admin/api/dm",{discord_id:id,message:m}); if(r) toast("DM envoyé"); } }
 async function role(id,action){ await api("/admin/api/role",{discord_id:id,action}); toast(action==="add"?"Rôle Pro ajouté":"Rôle Pro retiré"); }
+async function exportEmails(){
+  const rows = await api("/admin/api/emails"); if(!rows) return;
+  if(!rows.length){ toast("Aucun email collecté pour l'instant"); return; }
+  const head = "discord_id,username,email,verified,achats,cree_le,dernier_login";
+  const csv = [head].concat(rows.map(r=>[r.discord_id,(r.username||"").replace(/[",\n]/g," "),r.email,r.email_verified?1:0,r.purchases,r.created_at,r.last_login].map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(","))).join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="pulseboost-emails.csv"; a.click(); URL.revokeObjectURL(a.href);
+  toast(`${rows.length} email(s) exporté(s)`,"ok");
+}
 
 // --- Détail utilisateur ---
 async function detail(id){ const d=await api("/admin/api/user?discord_id="+encodeURIComponent(id)); if(!d)return;
@@ -402,6 +414,7 @@ async function detail(id){ const d=await api("/admin/api/user?discord_id="+encod
     </div>
     <h3 style="margin-top:18px">Profil &amp; utilisation</h3>
     <div class="kv">
+      <span>Email</span><b class="mono">${esc(u.email||"—")} ${u.email?(u.email_verified?'<span class="pill ok">vérifié</span>':'<span class="pill warn">non vérifié</span>'):''}</b>
       <span>Plan actuel</span><b>${esc(curPlan)}</b>
       <span>Temps d'utilisation</span><b>${fmtDur(us.total_ms)}</b>
       <span>Sessions</span><b>${us.sessions??0}</b>
@@ -472,6 +485,7 @@ async function flag(name,enabled,scope){ await api("/admin/api/flags",{name,enab
 $("btn-genkey").addEventListener("click", genKeys);
 $("k-search").addEventListener("input", renderKeys);
 $("u-search").addEventListener("input", renderUsers);
+$("btn-export-emails").addEventListener("click", exportEmails);
 $("btn-bl-add").addEventListener("click", addBl);
 $("btn-logs-refresh").addEventListener("click", loadLogs);
 

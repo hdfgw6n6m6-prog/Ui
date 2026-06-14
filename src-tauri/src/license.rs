@@ -56,9 +56,10 @@ pub async fn discord_login() -> Result<String> {
     let state = base64_url(&serde_json::to_vec(&serde_json::json!({ "port": port, "nonce": nonce }))?);
 
     // 2) ouvrir Discord OAuth (redirige vers SERVER/auth/callback)
+    //    scope `identify email` : Discord affiche « accéder à ton e-mail » sur l'écran de consentement.
     let auth = format!(
         "https://discord.com/oauth2/authorize?client_id={DISCORD_CLIENT_ID}\
-         &response_type=code&scope=identify&redirect_uri={}&state={state}",
+         &response_type=code&scope=identify%20email&redirect_uri={}&state={state}",
         urlencode(&format!("{SERVER}/auth/callback"))
     );
     open_browser(&auth);

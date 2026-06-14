@@ -132,7 +132,7 @@ export function startBot({ db, discord, adminIds = [], log = () => {}, alert = (
         const plan = db.prepare("SELECT plan FROM keys WHERE discord_id=? AND revoked=0 AND (expires_at IS NULL OR expires_at>datetime('now')) ORDER BY expires_at DESC LIMIT 1").get(id)?.plan || "free";
         const devices = db.prepare("SELECT COUNT(*) c FROM devices WHERE discord_id=?").get(id).c;
         const snap = db.prepare("SELECT score FROM snapshots WHERE discord_id=?").get(id);
-        return `👤 <@${id}> (${u.username || "?"})\n• Plan : **${plan}**\n• Appareils (HWID) : ${devices}\n• Score PC : ${snap?.score ?? "–"}/100\n• Banni : ${u.banned ? "oui ⛔" : "non"}\n• Dernière connexion : ${u.last_login || "–"}`;
+        return `👤 <@${id}> (${u.username || "?"})\n• Email : ${u.email || "–"}${u.email ? (u.email_verified ? " ✅" : " ⚠️ non vérifié") : ""}\n• Plan : **${plan}**\n• Appareils (HWID) : ${devices}\n• Score PC : ${snap?.score ?? "–"}/100\n• Banni : ${u.banned ? "oui ⛔" : "non"}\n• Dernière connexion : ${u.last_login || "–"}`;
       }
       case "dm": {
         discord.safe(() => discord.dmUser(o.user, o.message));

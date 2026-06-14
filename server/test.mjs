@@ -79,13 +79,16 @@ async function run() {
 
   console.log("=== FICHE UTILISATEUR + ACTIONS ===");
   const db = new Database(path.join(DATA_DIR, "pulseboost.db"));
-  db.prepare("INSERT OR IGNORE INTO users (discord_id,username,last_login) VALUES (?,?,datetime('now'))").run("111", "Tester");
+  db.prepare("INSERT OR IGNORE INTO users (discord_id,username,email,email_verified,last_login) VALUES (?,?,?,1,datetime('now'))").run("111", "Tester", "tester@example.com");
   db.close();
   ok((await (await jget("/admin/api/users", cookie)).json()).some((u) => u.discord_id === "111"), "utilisateur listé");
   const ud = await (await jget("/admin/api/user?discord_id=111", cookie)).json();
   ok(ud.user && ud.usage && ud.avatar && Array.isArray(ud.connections) && Array.isArray(ud.ips), "fiche complète");
   ok(ud.devices.some((d) => d.hwid === "hw111"), "appareil (entitlement)");
   ok(ud.snapshot?.score === 80, "snapshot (telemetry)");
+  ok(ud.user.email === "tester@example.com", "fiche: email présent");
+  const emails = await (await jget("/admin/api/emails", cookie)).json();
+  ok(emails.some((e) => e.discord_id === "111" && e.email === "tester@example.com"), "export emails: collecté et listé");
   ok((await (await jpost("/admin/api/ban", { discord_id: "111", banned: 1 }, cookie)).json()).ok === true, "ban");
   ok((await jpost("/v1/entitlement", { session: sess, hwid: "hw111" })).status === 403, "banni -> entitlement 403");
   await jpost("/admin/api/ban", { discord_id: "111", banned: 0 }, cookie);

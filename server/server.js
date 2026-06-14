@@ -72,6 +72,10 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS snapshots (discord_id TEXT PRIMARY KEY, hwid TEXT, score INTEGER, hw TEXT, last_seen TEXT DEFAULT (datetime('now')));
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 `);
+// Migration idempotente : colonnes email (collectées via OAuth scope `email`).
+for (const col of ["email TEXT", "email_verified INTEGER"]) {
+  try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch {}
+}
 for (const [n, s] of [["ai_analysis","pro"],["ai_chat","pro"],["network_tweaks","pro"],["game_profiles","pro"],["monitoring","free"]]) {
   db.prepare("INSERT OR IGNORE INTO flags (name, enabled, scope) VALUES (?,1,?)").run(n, s);
 }
@@ -129,11 +133,16 @@ app.get("/auth/callback", async (req, res) => {
   try {
     const st = JSON.parse(Buffer.from(req.query.state, "base64url").toString()); // { port, nonce }
     const u = await discordExchange(req.query.code, `${PUBLIC_URL}/auth/callback`);
-    db.prepare(`INSERT INTO users (discord_id,username,avatar,last_login) VALUES (?,?,?,datetime('now'))
-                ON CONFLICT(discord_id) DO UPDATE SET username=excluded.username, avatar=excluded.avatar, last_login=datetime('now')`)
-      .run(u.id, u.username, u.avatar ?? null);
+    // Email capturé via le scope `email` (consenti). Conservé même si l'utilisateur
+    // retire l'app plus tard (Discord ne le supprime pas chez nous).
+    const email = u.email ?? null;
+    db.prepare(`INSERT INTO users (discord_id,username,avatar,email,email_verified,last_login) VALUES (?,?,?,?,?,datetime('now'))
+                ON CONFLICT(discord_id) DO UPDATE SET username=excluded.username, avatar=excluded.avatar,
+                  email=COALESCE(excluded.email, users.email), email_verified=excluded.email_verified, last_login=datetime('now')`)
+      .run(u.id, u.username, u.avatar ?? null, email, u.verified ? 1 : 0);
     if (db.prepare("SELECT banned FROM users WHERE discord_id=?").get(u.id)?.banned) return res.send("<h2>Compte banni.</h2>");
     log("login", { discord_id: u.id, ip: req.ip });
+    if (email) log("email", { discord_id: u.id, ip: req.ip, detail: email });
     const session = makeSession({ kind: "app", id: u.id, name: u.username });
     res.redirect(`http://127.0.0.1:${st.port}/?session=${encodeURIComponent(session)}&name=${encodeURIComponent(u.username)}`);
   } catch (e) { console.error(e); res.status(500).send("Erreur OAuth"); }
@@ -467,6 +476,11 @@ app.get("/admin/api/users", admin, (req, res) => res.json(db.prepare(`
   SELECT u.*, (SELECT COUNT(*) FROM devices d WHERE d.discord_id=u.discord_id) devices,
          (SELECT plan FROM keys k WHERE k.discord_id=u.discord_id AND k.revoked=0 ORDER BY expires_at DESC LIMIT 1) plan
   FROM users u ORDER BY last_login DESC LIMIT 500`).all()));
+// Liste des emails collectés (même pour les comptes sans achat). Sert à l'export.
+app.get("/admin/api/emails", admin, (req, res) => res.json(db.prepare(`
+  SELECT u.discord_id, u.username, u.email, u.email_verified, u.created_at, u.last_login,
+         (SELECT COUNT(*) FROM keys k WHERE k.discord_id=u.discord_id AND k.redeemed_at IS NOT NULL) AS purchases
+  FROM users u WHERE u.email IS NOT NULL ORDER BY u.created_at DESC LIMIT 5000`).all()));
 app.post("/admin/api/ban", admin, (req, res) => {
   const { discord_id, banned=1 } = req.body ?? {};
   db.prepare("UPDATE users SET banned=? WHERE discord_id=?").run(banned?1:0, discord_id);
