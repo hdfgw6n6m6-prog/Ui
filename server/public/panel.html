@@ -125,7 +125,6 @@
     <button class="nav" data-tab="churn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v6h-6"/></svg><span>Churn</span></button>
     <button class="nav" data-tab="keys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 20 3l1 1-2 2 1 1-2 2-1-1-2 2"/></svg><span>Clés</span></button>
     <button class="nav" data-tab="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg><span>Utilisateurs</span></button>
-    <button class="nav" data-tab="ventes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 12.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span>Ventes</span></button>
     <button class="nav" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg><span>Logs</span></button>
     <button class="nav" data-tab="blacklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span>Blacklist</span></button>
     <button class="nav" data-tab="flags"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V4h12l-2 4 2 4H4"/></svg><span>Features</span></button>
@@ -249,20 +248,6 @@
         </div>
       </section>
 
-      <!-- VENTES -->
-      <section id="ventes" class="hide">
-        <div class="cards">
-          <div class="stat"><b id="v-revenue">—</b><span>Revenu total</span></div>
-          <div class="stat"><b id="v-revenue30">—</b><span>Revenu 30 jours</span></div>
-          <div class="stat"><b id="v-sales">—</b><span>Ventes</span></div>
-          <div class="stat"><b id="v-pro">—</b><span>Abonnés Pro actifs</span></div>
-        </div>
-        <div class="card"><h2>Ventes par jour (14 jours)</h2><div id="v-chart"></div></div>
-        <div class="card"><h2>Historique des ventes</h2>
-          <table><thead><tr><th>Quand</th><th>Utilisateur</th><th>Plan</th><th>Montant</th><th>Source</th><th>Clé</th></tr></thead><tbody id="v-rows"></tbody></table>
-        </div>
-      </section>
-
       <!-- REGLAGES -->
       <section id="settings" class="hide">
         <div class="card">
@@ -322,7 +307,6 @@ const TABS = {
   churn:["Churn","Pourquoi les abonnés partent", loadChurn],
   keys:["Clés","Génération et gestion des licences", loadKeys],
   users:["Utilisateurs","Comptes, appareils et actions", loadUsers],
-  ventes:["Ventes","Revenu et historique des achats", loadVentes],
   logs:["Logs","Journal complet des évènements", loadLogs],
   blacklist:["Blacklist","Postes (HWID) bloqués", loadBl],
   flags:["Features","Modules et portée gratuit/Pro", loadFlags],
@@ -521,17 +505,6 @@ async function loadFlags(){ const f=await api("/admin/api/flags"); if(!f)return;
       <option value="free" ${x.scope==="free"?"selected":""}>gratuit</option>
       <option value="pro" ${x.scope==="pro"?"selected":""}>Pro</option></select></td></tr>`).join(""); }
 async function flag(name,enabled,scope){ await api("/admin/api/flags",{name,enabled,scope}); toast("Flag mis à jour"); }
-
-// --- Ventes ---
-const fmtMoney = (cents,cur) => ((cents||0)/100).toLocaleString("fr-FR",{style:"currency",currency:(cur||"eur").toUpperCase()});
-async function loadVentes(){
-  const a=await api("/admin/api/analytics"); const p=await api("/admin/api/purchases"); if(!a||!p)return;
-  $("v-revenue").textContent=fmtMoney(a.revenue,a.currency); $("v-revenue30").textContent=fmtMoney(a.revenue30,a.currency);
-  $("v-sales").textContent=a.sales; $("v-pro").textContent=a.proUsers;
-  bars($("v-chart"), a.salesByDay, r=>r.d);
-  $("v-rows").innerHTML = p.length ? p.map(x=>`<tr><td>${dt(x.at)}</td><td>${esc(x.username||x.discord_id)}</td>
-    <td>${esc(x.plan)}</td><td>${x.provider==="gift"?'<span class="pill info">cadeau</span>':fmtMoney(x.amount,x.currency)}</td>
-    <td>${esc(x.provider)}</td><td class="mono">${esc(x.key||"—")}</td></tr>`).join("") : '<tr><td colspan="6" class="empty">Aucune vente.</td></tr>'; }
 
 // --- Réglages ---
 async function loadSettings(){ const s=await api("/admin/api/settings"); if(!s)return;

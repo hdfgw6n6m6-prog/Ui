@@ -25,23 +25,15 @@ import { startBot } from "./bot.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-// verify capture le corps brut (rawBody) -> nécessaire pour vérifier la signature Stripe.
-app.use(express.json({ limit: "256kb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const PUBLIC_URL = process.env.PUBLIC_URL ?? "http://localhost:8787";
 const ADMIN_IDS = (process.env.ADMIN_DISCORD_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
-// --- Plans & tarifs (paiement) ---
+// --- Plans (durée par plan) ---
 const PLAN_DAYS = { weekly: 7, monthly: 30, quarterly: 90, lifetime: 0 };
 const PLAN_LABEL = { weekly: "Hebdomadaire", monthly: "Mensuel", quarterly: "Trimestriel", lifetime: "À vie" };
-const CURRENCY = (process.env.CURRENCY ?? "eur").toLowerCase();
-const PLAN_PRICE = { // en centimes (0 = plan masqué de la boutique)
-  weekly: +(process.env.PRICE_WEEKLY ?? 0),
-  monthly: +(process.env.PRICE_MONTHLY ?? 0),
-  quarterly: +(process.env.PRICE_QUARTERLY ?? 0),
-  lifetime: +(process.env.PRICE_LIFETIME ?? 0),
-};
 
 // --- Base de donnees ---
 // DATA_DIR permet de placer la base sur un disque persistant (utile sur un
@@ -83,8 +75,6 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, reason TEXT, comment TEXT, at TEXT DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS snapshots (discord_id TEXT PRIMARY KEY, hwid TEXT, score INTEGER, hw TEXT, last_seen TEXT DEFAULT (datetime('now')));
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
-  CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, email TEXT, plan TEXT,
-    amount INTEGER, currency TEXT, provider TEXT, ref TEXT UNIQUE, key TEXT, at TEXT DEFAULT (datetime('now')));
   CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT);
 `);
 // Migration idempotente : colonnes email (collectées via OAuth scope `email`).
@@ -416,119 +406,6 @@ app.get("/v1/announcement", (req, res) => res.json({
   download_url: getSetting("download_url"),
 }));
 
-// --- BOUTIQUE / PAIEMENT (Stripe, REST pur) ---
-const STRIPE_KEY = () => process.env.STRIPE_SECRET_KEY;
-function shopPlans() { return Object.keys(PLAN_PRICE).filter((p) => PLAN_PRICE[p] > 0); }
-function money(cents) { return (cents / 100).toLocaleString("fr-FR", { style: "currency", currency: CURRENCY.toUpperCase() }); }
-
-// Session web (cookie pb_user) pour la boutique — distincte de l'app et de l'admin.
-function readWeb(req) {
-  const c = (req.headers.cookie ?? "").split(";").map((x) => x.trim()).find((x) => x.startsWith("pb_user="));
-  const s = readSession(c?.slice("pb_user=".length));
-  return s && s.kind === "web" ? s : null;
-}
-app.get("/buy/login", (req, res) => {
-  const state = Buffer.from(JSON.stringify({ buy: true })).toString("base64url");
-  res.redirect(`https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}` +
-    `&response_type=code&scope=identify%20email&redirect_uri=${encodeURIComponent(PUBLIC_URL + "/buy/callback")}&state=${state}`);
-});
-app.get("/buy/callback", async (req, res) => {
-  try {
-    const u = await discordExchange(req.query.code, `${PUBLIC_URL}/buy/callback`);
-    db.prepare(`INSERT INTO users (discord_id,username,avatar,email,email_verified,last_login) VALUES (?,?,?,?,?,datetime('now'))
-                ON CONFLICT(discord_id) DO UPDATE SET username=excluded.username, avatar=excluded.avatar,
-                  email=COALESCE(excluded.email, users.email), email_verified=excluded.email_verified, last_login=datetime('now')`)
-      .run(u.id, u.username, u.avatar ?? null, u.email ?? null, u.verified ? 1 : 0);
-    if (u.email) log("email", { discord_id: u.id, ip: req.ip, detail: u.email });
-    const sess = makeSession({ kind: "web", id: u.id, name: u.username, email: u.email ?? null }, 6 * 3600000);
-    res.setHeader("Set-Cookie", `pb_user=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=21600`);
-    res.redirect("/buy");
-  } catch (e) { console.error("[buy/callback]", e); res.status(500).send("Erreur de connexion Discord."); }
-});
-function shopPage(user, note = "") {
-  const plans = shopPlans();
-  const cards = plans.length ? plans.map((p) => `
-    <form method="post" action="/buy/checkout" class="plan">
-      <div class="pname">${PLAN_LABEL[p]}</div>
-      <div class="price">${money(PLAN_PRICE[p])}</div>
-      <div class="pdesc">${p === "lifetime" ? "Accès à vie" : "Accès " + PLAN_DAYS[p] + " jours"}</div>
-      <input type="hidden" name="plan" value="${p}">
-      <button class="btn">Choisir</button>
-    </form>`).join("") : `<p class="muted">Boutique pas encore configurée (prix manquants).</p>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PulseBoost Pro — Boutique</title>
-<style>body{margin:0;min-height:100vh;background:radial-gradient(900px 500px at 80% -10%,rgba(139,92,246,.18),transparent 60%),#0a0910;color:#ece9f5;font:15px/1.6 system-ui,Segoe UI,sans-serif;display:flex;flex-direction:column;align-items:center;padding:40px 16px}
-h1{font-size:30px;margin:0 0 4px} .sub{color:#918bab;margin-bottom:26px} .plans{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
-.plan{background:rgba(21,18,30,.8);border:1px solid rgba(139,92,246,.25);border-radius:18px;padding:26px;width:200px;text-align:center}
-.pname{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#a78bfa} .price{font-size:30px;font-weight:700;margin:8px 0} .pdesc{color:#918bab;font-size:13px;margin-bottom:16px}
-.btn{width:100%;padding:12px;border:0;border-radius:10px;background:#8b5cf6;color:#fff;font:inherit;font-weight:600;cursor:pointer} .btn:hover{background:#a78bfa}
-.muted{color:#918bab} .who{margin-top:22px;font-size:13px;color:#918bab} .note{color:#34d399;margin-bottom:14px}</style></head>
-<body><h1>PulseBoost <span style="color:#8b5cf6">Pro</span></h1><div class="sub">Optimisations avancées, analyse IA, support prioritaire.</div>
-${note ? `<div class="note">${note}</div>` : ""}
-${user ? `<div class="plans">${cards}</div><div class="who">Connecté : <b>${user.name}</b> — la clé sera liée à ce compte Discord et activée automatiquement.</div>`
-       : `<a class="btn" style="width:auto;padding:12px 24px;text-decoration:none" href="/buy/login">Se connecter avec Discord pour acheter</a>`}
-</body></html>`;
-}
-app.get("/buy", (req, res) => res.send(shopPage(readWeb(req), req.query.ok ? "Paiement reçu — ta clé Pro est activée ! Relance PulseBoost." : "")));
-app.get("/buy/success", (req, res) => res.redirect("/buy?ok=1"));
-app.get("/buy/cancel", (req, res) => res.redirect("/buy"));
-app.post("/buy/checkout", async (req, res) => {
-  const u = readWeb(req);
-  if (!u) return res.redirect("/buy/login");
-  const plan = String(req.body.plan ?? "");
-  if (!shopPlans().includes(plan)) return res.redirect("/buy");
-  if (!STRIPE_KEY()) return res.status(502).send("Paiement non configuré (STRIPE_SECRET_KEY).");
-  try {
-    const form = new URLSearchParams();
-    form.set("mode", "payment");
-    form.set("success_url", `${PUBLIC_URL}/buy/success`);
-    form.set("cancel_url", `${PUBLIC_URL}/buy/cancel`);
-    form.set("client_reference_id", u.id);
-    if (u.email) form.set("customer_email", u.email);
-    form.set("metadata[plan]", plan);
-    form.set("metadata[discord_id]", u.id);
-    form.set("line_items[0][quantity]", "1");
-    form.set("line_items[0][price_data][currency]", CURRENCY);
-    form.set("line_items[0][price_data][unit_amount]", String(PLAN_PRICE[plan]));
-    form.set("line_items[0][price_data][product_data][name]", `PulseBoost Pro — ${PLAN_LABEL[plan]}`);
-    const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-      method: "POST", headers: { Authorization: `Bearer ${STRIPE_KEY()}`, "Content-Type": "application/x-www-form-urlencoded" }, body: form,
-    });
-    const sess = await r.json();
-    if (!r.ok || !sess.url) { console.error("[stripe checkout]", sess?.error?.message); return res.status(502).send("Erreur paiement."); }
-    res.redirect(303, sess.url);
-  } catch (e) { console.error("[checkout]", e); res.status(502).send("Erreur paiement."); }
-});
-// Webhook Stripe : vérifie la signature, génère + lie la clé, DM, enregistre la vente.
-function verifyStripe(rawBody, sigHeader, secret) {
-  const parts = Object.fromEntries(String(sigHeader || "").split(",").map((p) => p.split("=")));
-  if (!parts.t || !parts.v1) return null;
-  const expected = crypto.createHmac("sha256", secret).update(`${parts.t}.${rawBody}`).digest("hex");
-  try { if (!crypto.timingSafeEqual(Buffer.from(parts.v1), Buffer.from(expected))) return null; } catch { return null; }
-  return JSON.parse(rawBody.toString());
-}
-app.post("/webhook/stripe", (req, res) => {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) return res.status(502).end();
-  const event = verifyStripe(req.rawBody, req.headers["stripe-signature"], secret);
-  if (!event) return res.status(400).end();
-  if (event.type === "checkout.session.completed") {
-    const s = event.data.object;
-    const discord_id = s.client_reference_id || s.metadata?.discord_id;
-    const plan = s.metadata?.plan;
-    if (discord_id && plan && PLAN_DAYS[plan] !== undefined) {
-      const exists = db.prepare("SELECT 1 FROM purchases WHERE ref=?").get(s.id);
-      if (!exists) {
-        const { key } = grantPro(discord_id, plan, `achat Stripe ${plan}`);
-        db.prepare("INSERT INTO purchases (discord_id,email,plan,amount,currency,provider,ref,key) VALUES (?,?,?,?,?,?,?,?)")
-          .run(discord_id, s.customer_email ?? s.customer_details?.email ?? null, plan, s.amount_total ?? 0, s.currency ?? CURRENCY, "stripe", s.id, key);
-        alert("info", `💰 Vente ${PLAN_LABEL[plan]} (${money(s.amount_total ?? 0)}) — <@${discord_id}>`, discord_id);
-        discord.safe(() => discord.dmUser(discord_id, `🎉 Merci pour ton achat **PulseBoost Pro ${PLAN_LABEL[plan]}** !\nTon accès est **déjà activé** sur ton compte — relance l'app.\nClé (sauvegarde) : \`${key}\``));
-        discord.safe(() => discord.postLog(`💰 **Vente** ${PLAN_LABEL[plan]} (${money(s.amount_total ?? 0)}) — <@${discord_id}>`));
-      }
-    }
-  }
-  res.json({ received: true });
-});
 
 // --- PANEL ADMIN ---
 // Page de login : mot de passe (marche en http/IP, sans Discord) si ADMIN_PASSWORD
@@ -683,18 +560,12 @@ app.post("/admin/api/settings", admin, (req, res) => {
   res.json({ ok: true });
 });
 
-// Ventes
-app.get("/admin/api/purchases", admin, (req, res) => res.json(db.prepare(`
-  SELECT p.*, u.username FROM purchases p LEFT JOIN users u ON u.discord_id=p.discord_id ORDER BY p.id DESC LIMIT 1000`).all()));
-
 // Offrir Pro (cadeau) — crée une clé déjà liée + active
 app.post("/admin/api/grant", admin, (req, res) => {
   const { discord_id, plan = "monthly" } = req.body ?? {};
   if (!discord_id || PLAN_DAYS[plan] === undefined) return res.status(400).json({ error: "discord_id/plan invalide" });
   db.prepare("INSERT OR IGNORE INTO users (discord_id) VALUES (?)").run(discord_id);
   const { key } = grantPro(discord_id, plan, "cadeau admin");
-  db.prepare("INSERT INTO purchases (discord_id,plan,amount,currency,provider,ref,key) VALUES (?,?,?,?,?,?,?)")
-    .run(discord_id, plan, 0, CURRENCY, "gift", "gift-" + key, key);
   log("grant", { discord_id: req.admin.id, detail: `${plan} -> ${discord_id}` });
   discord.safe(() => discord.dmUser(discord_id, `🎁 Tu as reçu **PulseBoost Pro ${PLAN_LABEL[plan]}** ! C'est déjà activé — relance l'app. Clé : \`${key}\``));
   res.json({ ok: true, key });
@@ -752,12 +623,7 @@ app.get("/admin/api/analytics", admin, (req, res) => {
   const redeemsByDay = all("SELECT date(redeemed_at) d, COUNT(*) c FROM keys WHERE redeemed_at > datetime('now','-14 day') GROUP BY d ORDER BY d");
   const activeByDay = all("SELECT date(at) d, COUNT(DISTINCT discord_id) c FROM events WHERE at > datetime('now','-14 day') GROUP BY d ORDER BY d");
   const conversion = totalUsers ? Math.round((proUsers/totalUsers)*100) : 0;
-  const revenue = one("SELECT COALESCE(SUM(amount),0) s FROM purchases WHERE provider!='gift'").s;
-  const revenue30 = one("SELECT COALESCE(SUM(amount),0) s FROM purchases WHERE provider!='gift' AND at > datetime('now','-30 day')").s;
-  const sales = one("SELECT COUNT(*) c FROM purchases WHERE provider!='gift'").c;
-  const salesByDay = all("SELECT date(at) d, COUNT(*) c FROM purchases WHERE provider!='gift' AND at > datetime('now','-14 day') GROUP BY d ORDER BY d");
-  res.json({ dau, wau, totalUsers, proUsers, newUsers, avgScore, conversion, expiringSoon, churned30, planMix, topTweaks,
-    redeemsByDay, activeByDay, revenue, revenue30, sales, salesByDay, currency: CURRENCY });
+  res.json({ dau, wau, totalUsers, proUsers, newUsers, avgScore, conversion, expiringSoon, churned30, planMix, topTweaks, redeemsByDay, activeByDay });
 });
 
 // Detail complet d'un client (analyse "qu'est-ce qui ne va pas")

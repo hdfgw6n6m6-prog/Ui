@@ -170,10 +170,6 @@ async fn ai_analysis(scan: Value, locale: String) -> Result<Value, String> {
     ai::analyze(scan, &locale).await.map_err(|e| e.to_string())
 }
 
-/// Ouvre la boutique (achat Pro) dans le navigateur par défaut.
-#[tauri::command]
-fn open_store() { license::open_store(); }
-
 /// Ouvre une URL (ex. lien de mise à jour) dans le navigateur.
 #[tauri::command]
 fn open_url(url: String) { license::open_url(&url); }
@@ -275,7 +271,6 @@ fn main() {
             free_analysis,
             ai_analysis,
             ai_chat,
-            open_store,
             open_url,
             announcement,
             reset_profile,

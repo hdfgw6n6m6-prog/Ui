@@ -66,22 +66,6 @@ et `DATA_DIR` (disque persistant).
 > `applications.commands` (en plus de `bot`), sinon les slash commands
 > n'apparaissent pas. Tape `/help` dans ton serveur pour vérifier.
 
-## 4 bis. Paiement Stripe (boutique automatisée)
-
-1. Crée un compte **Stripe** → note la **clé secrète** (`sk_...`) → `STRIPE_SECRET_KEY`.
-2. Dashboard Stripe → **Developers → Webhooks → Add endpoint** :
-   - URL : `PUBLIC_URL/webhook/stripe`
-   - Évènement : `checkout.session.completed`
-   - Note le **signing secret** (`whsec_...`) → `STRIPE_WEBHOOK_SECRET`.
-3. Dans `config.js`, fixe les **prix EN CENTIMES** : `PRICE_MONTHLY`, `PRICE_LIFETIME`,
-   etc. (un plan vide = masqué de la boutique). `CURRENCY=eur`.
-4. La boutique est servie sur **`PUBLIC_URL/buy`** : l'utilisateur se connecte avec
-   Discord, paie, et sa **clé Pro est générée + liée + activée automatiquement** (et
-   envoyée en DM). Les ventes apparaissent dans le panel (onglet **Ventes**).
-
-> Dans l'app, le bouton « Passer Pro » ouvre `PUBLIC_URL/buy`. Vérifie que `SERVER`
-> (côté Rust) pointe sur le même `PUBLIC_URL`.
-
 ## 5. Vérifier que tout marche
 
 - `GET PUBLIC_URL/` → redirige vers `/admin/login`.

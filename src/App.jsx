@@ -171,7 +171,6 @@ export default function App() {
     finally { setFreeBusy(false); }
   };
 
-  const openStore = () => { invoke("open_store").catch((e) => notify(String(e))); };
   const updateNow = () => { if (announce?.download_url) invoke("open_url", { url: announce.download_url }).catch(() => {}); };
 
   const applyIds = async (ids) => {
@@ -574,13 +573,6 @@ export default function App() {
                       <li><IconCheck /> Mémoire, SysMain, GPU scheduling matériel</li>
                       <li><IconCheck /> Analyse IA détaillée de ton matériel</li>
                     </ul>
-                    <div className="buy-row">
-                      <button className="btn pro-cta lg" onClick={openStore}>
-                        <IconGem width={17} height={17} /> Passer Pro — acheter
-                      </button>
-                      <span className="muted tiny">Paiement sécurisé · clé activée automatiquement sur ton compte</span>
-                    </div>
-                    <p className="muted tiny" style={{ margin: "14px 0 8px" }}>Déjà une clé ? Active-la ci-dessous :</p>
                     {!discordName && !logged ? (
                       <>
                         <p className="muted">Connecte-toi avec Discord, puis active ta clé. La clé se lie à ton compte (pas au PC).</p>

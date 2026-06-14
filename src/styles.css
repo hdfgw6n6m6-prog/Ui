@@ -243,7 +243,6 @@ nav { display: grid; gap: 3px; }
   background: rgba(139,92,246,0.1); border: 1px solid var(--line); font-size: 13.5px; }
 .banner svg { width: 17px; height: 17px; color: var(--pulse-2); flex: 0 0 auto; }
 .banner.update { background: rgba(34,211,238,0.08); border-color: rgba(34,211,238,0.25); justify-content: space-between; }
-.buy-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
 
 /* --- Analyse gratuite (estimation FPS honnête) --- */
 .free-card { border-color: rgba(52, 211, 153, 0.22); background: radial-gradient(540px 240px at 95% 0%, rgba(52,211,153,0.07), transparent 70%), var(--panel); }
