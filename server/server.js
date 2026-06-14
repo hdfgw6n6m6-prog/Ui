@@ -606,7 +606,8 @@ app.get("/panel", (req, res) => {
 });
 app.get("/", (req, res) => res.redirect("/admin/login"));
 
-app.listen(process.env.PORT ?? 8787, () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
+// Écoute sur 0.0.0.0 (toutes interfaces) — requis par le Proxy Manager de l'hébergeur.
+app.listen(process.env.PORT ?? 8787, "0.0.0.0", () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
 
 // Bot Discord (gateway) : commandes admin slash. Le panel web reste actif en parallèle.
 startBot({ db, discord, adminIds: ADMIN_IDS, log, alert });
