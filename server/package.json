@@ -6,7 +6,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node server.js",
-    "keygen": "node keygen.js"
+    "keygen": "node keygen.js",
+    "test": "node test.mjs"
   },
   "dependencies": {
     "express": "^4.19.0",
