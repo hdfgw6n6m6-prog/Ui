@@ -178,6 +178,7 @@
 <script>
 const api = (p, body) => fetch(p, body ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) } : {})
   .then(r => { if (r.status===401) location.href="/admin/login"; return r.json(); });
+const $ = (id) => document.getElementById(id);
 
 // navigation
 let KEYS=[], USERS=[];
@@ -203,8 +204,8 @@ function bars(el, rows, label){ const max=Math.max(1,...rows.map(r=>r.c));
     : '<p class="muted">Pas encore de données.</p>'; }
 
 async function loadAnalytics(){ const a=await api("/admin/api/analytics");
-  a_dau.textContent=a.dau; a_wau.textContent=a.wau; a_new.textContent=a.newUsers;
-  a_conv.textContent=a.conversion+"%"; a_score.textContent=a.avgScore??"–"; a_churn.textContent=a.churned30;
+  $("a-dau").textContent=a.dau; $("a-wau").textContent=a.wau; $("a-new").textContent=a.newUsers;
+  $("a-conv").textContent=a.conversion+"%"; $("a-score").textContent=a.avgScore??"–"; $("a-churn").textContent=a.churned30;
   spark(document.getElementById("chart-active"), a.activeByDay);
   spark(document.getElementById("chart-redeem"), a.redeemsByDay);
   bars(document.getElementById("top-tweaks"), a.topTweaks, r=>r.detail||"?");
@@ -302,7 +303,7 @@ async function addBl(){ const hwid=document.getElementById("bl-hwid").value.trim
 async function rmBl(hwid){ await api("/admin/api/unblacklist",{hwid}); loadBl(); }
 
 async function loadStats(){ const s=await api("/admin/api/stats");
-  s_users.textContent=s.users; s_active.textContent=s.active; s_keys.textContent=s.keys; s_alerts.textContent=s.alerts; }
+  $("s-users").textContent=s.users; $("s-active").textContent=s.active; $("s-keys").textContent=s.keys; $("s-alerts").textContent=s.alerts; }
 async function loadAlerts(){ const a=await api("/admin/api/alerts"); renderAlerts(a); }
 function renderAlerts(list){ document.getElementById("alerts").innerHTML = list.length ? list.map(a=>`
   <div class="alert ${a.level}">
@@ -325,7 +326,7 @@ function renderKeys(){ const q=(document.getElementById("k-search").value||"").t
       <td>${k.revoked?"":`<button class="btn sm bad" onclick="revoke('${k.key}')">révoquer</button>
       <button class="btn sm" onclick="unbind('${k.key}')">délier</button>`}</td></tr>`;
   }).join(""); }
-async function genKeys(){ const r=await api("/admin/api/keys",{plan:k_plan.value,qty:+k_qty.value,note:k_note.value||null,dm_to:document.getElementById("k-dm").value.trim()||null});
+async function genKeys(){ const r=await api("/admin/api/keys",{plan:$("k-plan").value,qty:+$("k-qty").value,note:$("k-note").value||null,dm_to:$("k-dm").value.trim()||null});
   document.getElementById("k-out").textContent = r.keys.join("  ·  "); loadKeys(); loadStats(); }
 async function revoke(key){ await api("/admin/api/revoke",{key}); loadKeys(); }
 async function unbind(key){ await api("/admin/api/unbind",{key}); loadKeys(); }
