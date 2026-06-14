@@ -401,6 +401,11 @@ app.post("/admin/auth", (req, res) => {
   res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`);
   res.redirect("/panel");
 });
+// Déconnexion admin : efface le cookie.
+app.get("/admin/logout", (req, res) => {
+  res.setHeader("Set-Cookie", "pb_admin=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  res.redirect("/admin/login");
+});
 app.get("/admin/callback", async (req, res) => {
   try {
     const u = await discordExchange(req.query.code, `${PUBLIC_URL}/admin/callback`);

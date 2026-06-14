@@ -3,257 +3,407 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PulseBoost — Panel</title>
+<title>PulseBoost — Panel admin</title>
 <style>
-  :root{--bg:#0b0a12;--panel:#16131f;--bd:rgba(139,92,246,.16);--pulse:#8b5cf6;--data:#22d3ee;
-        --ok:#34d399;--warn:#f59e0b;--bad:#f43f5e;--text:#e9e6f2;--muted:#8d87a3}
+  :root{
+    --bg:#0a0910; --panel:rgba(21,18,30,.72); --panel-solid:#15121e; --panel-2:rgba(255,255,255,.03);
+    --line:rgba(139,92,246,.16); --line-soft:rgba(255,255,255,.07);
+    --pulse:#8b5cf6; --pulse-2:#a78bfa; --data:#22d3ee; --ok:#34d399; --warn:#f59e0b; --bad:#f43f5e;
+    --text:#ece9f5; --muted:#918bab; --muted-2:#6c6782; --radius:16px; --radius-sm:11px;
+    --shadow:0 16px 50px rgba(0,0,0,.45);
+  }
   *{box-sizing:border-box;margin:0}
-  body{background:radial-gradient(900px 500px at 85% -10%,rgba(139,92,246,.14),transparent 60%),var(--bg);
-       color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif}
-  .wrap{display:grid;grid-template-columns:190px 1fr;min-height:100vh}
-  .rail{border-right:1px solid var(--bd);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
-  .brand{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;margin-bottom:18px}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--pulse);box-shadow:0 0 10px var(--pulse)}
-  .nav{text-align:left;background:none;border:none;color:var(--muted);font:inherit;padding:9px 12px;border-radius:8px;cursor:pointer}
-  .nav:hover{background:rgba(139,92,246,.08);color:var(--text)} .nav.on{background:rgba(139,92,246,.16);color:var(--text)}
-  main{padding:22px;overflow:auto}
-  h1{font-size:20px;margin-bottom:14px} h2{font-size:15px;margin-bottom:10px}
-  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
-  .stat{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px}
-  .stat b{font-size:26px;display:block} .stat span{color:var(--muted);font-size:12px}
-  .card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1100px 600px at 88% -12%,rgba(139,92,246,.16),transparent 60%),
+               radial-gradient(800px 500px at -12% 112%,rgba(34,211,238,.08),transparent 60%),var(--bg);
+    color:var(--text); font:14px/1.55 Inter,"Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased;
+  }
+  h1{font-family:"Space Grotesk","Segoe UI",sans-serif;font-size:22px;letter-spacing:-.02em}
+  h2{font-family:"Space Grotesk","Segoe UI",sans-serif;font-size:16px;margin-bottom:12px;letter-spacing:-.01em}
+  h3{font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+  .mono,code{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace}
+  .muted{color:var(--muted)} .tiny{font-size:12px}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:rgba(139,92,246,.2);border-radius:10px;border:2px solid transparent;background-clip:content-box}
+
+  .wrap{display:grid;grid-template-columns:222px 1fr;min-height:100vh}
+  .rail{border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:3px;
+        background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 40%);position:sticky;top:0;height:100vh}
+  .brand{font-family:"Space Grotesk";font-weight:700;font-size:18px;display:flex;align-items:center;gap:9px;padding:0 6px;margin-bottom:18px}
+  .pulse-dot{width:11px;height:11px;border-radius:50%;background:var(--pulse);box-shadow:0 0 14px var(--pulse);animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{50%{box-shadow:0 0 3px var(--pulse);opacity:.55}}
+  .nav{display:flex;align-items:center;gap:11px;text-align:left;background:none;border:none;color:var(--muted);
+       font:inherit;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .15s,color .15s;width:100%}
+  .nav svg{width:17px;height:17px;flex:0 0 auto;opacity:.85}
+  .nav:hover{background:rgba(139,92,246,.08);color:var(--text)}
+  .nav.on{background:rgba(139,92,246,.16);color:var(--text);box-shadow:inset 2px 0 0 var(--pulse)}
+  .rail-foot{margin-top:auto;display:grid;gap:8px}
+  .live{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ok);padding:8px 12px}
+  .live i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .logout{display:flex;align-items:center;gap:9px;color:var(--muted);text-decoration:none;font-size:12.5px;padding:9px 12px;border-radius:10px;border:1px solid var(--line-soft)}
+  .logout:hover{color:var(--text);background:var(--panel-2)}
+
+  main{overflow:auto}
+  .topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:16px;
+          padding:16px 28px;background:linear-gradient(180deg,var(--bg) 30%,rgba(10,9,16,.6));backdrop-filter:blur(8px);
+          border-bottom:1px solid var(--line-soft)}
+  .topbar .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .content{padding:24px 28px 44px;max-width:1140px;margin:0 auto}
+
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .cards.six{grid-template-columns:repeat(6,1fr)}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;backdrop-filter:blur(16px)}
+  .stat b{font-family:"JetBrains Mono";font-size:28px;display:block;line-height:1.1}
+  .stat.six b{font-size:22px}
+  .stat span{color:var(--muted);font-size:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:18px;
+        backdrop-filter:blur(16px);box-shadow:var(--shadow)}
+
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);white-space:nowrap}
-  th{color:var(--muted);font-weight:500} td.mono,code{font-family:ui-monospace,Consolas,monospace}
-  .btn{font:inherit;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;color:var(--text);background:rgba(255,255,255,.06)}
-  .btn.primary{background:var(--pulse)} .btn.bad{background:rgba(244,63,94,.16);color:var(--bad);border:1px solid rgba(244,63,94,.3)}
-  .btn.sm{padding:4px 9px;font-size:12px}
-  input,select{font:inherit;background:rgba(255,255,255,.04);border:1px solid var(--bd);color:var(--text);border-radius:8px;padding:8px 10px}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-  .pill{font-size:11px;padding:2px 8px;border-radius:6px} .pill.info{background:rgba(34,211,238,.14);color:var(--data)}
-  .pill.warn{background:rgba(245,158,11,.14);color:var(--warn)} .pill.bad{background:rgba(244,63,94,.14);color:var(--bad)}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  th{color:var(--muted);font-weight:500} td.mono{font-size:12px}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+
+  .btn{font:inherit;border:1px solid var(--line-soft);border-radius:10px;padding:9px 15px;cursor:pointer;color:var(--text);
+       background:rgba(255,255,255,.05);display:inline-flex;align-items:center;gap:7px;transition:background .15s,transform .05s}
+  .btn:hover{background:rgba(255,255,255,.09)} .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--pulse);border-color:transparent;box-shadow:0 4px 18px rgba(139,92,246,.35)}
+  .btn.primary:hover{background:var(--pulse-2)}
+  .btn.bad{background:rgba(244,63,94,.14);color:#ffb3c0;border-color:rgba(244,63,94,.3)}
+  .btn.bad:hover{background:rgba(244,63,94,.22)}
+  .btn.sm{padding:5px 10px;font-size:12px;border-radius:8px}
+  input,select{font:inherit;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:9px 11px}
+  input:focus,select:focus{outline:2px solid var(--data);outline-offset:1px}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .between{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}
+
+  .pill{font-size:11px;padding:2px 9px;border-radius:999px;display:inline-block}
+  .pill.info{background:rgba(34,211,238,.14);color:var(--data)}
+  .pill.warn{background:rgba(245,158,11,.14);color:var(--warn)}
+  .pill.bad{background:rgba(244,63,94,.14);color:var(--bad)}
   .pill.ok{background:rgba(52,211,153,.14);color:var(--ok)}
-  .alert{display:flex;justify-content:space-between;gap:10px;padding:9px 12px;border-radius:9px;background:rgba(255,255,255,.03);margin-bottom:6px;border-left:3px solid var(--muted)}
+  .alert{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:11px 13px;border-radius:var(--radius-sm);
+         background:var(--panel-2);margin-bottom:7px;border-left:3px solid var(--muted)}
   .alert.warn{border-color:var(--warn)} .alert.bad{border-color:var(--bad)} .alert.info{border-color:var(--data)}
-  .hide{display:none} .muted{color:var(--muted)}
-  .live{margin-left:auto;font-size:11px;color:var(--ok)}
-  @media(max-width:780px){.wrap{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}}
-  .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:grid;place-items:center;padding:24px;z-index:50}
-  .modal-card{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:22px;max-width:760px;width:100%;max-height:86vh;overflow:auto}
-  .bars{display:flex;flex-direction:column;gap:6px}
-  .bar-row{display:grid;grid-template-columns:140px 1fr 48px;align-items:center;gap:8px;font-size:12.5px}
-  .bar-track{height:18px;background:rgba(255,255,255,.05);border-radius:5px;overflow:hidden}
-  .bar-fill{height:100%;background:linear-gradient(90deg,var(--pulse),var(--data));border-radius:5px}
-  .spark{display:flex;align-items:flex-end;gap:3px;height:90px}
-  .spark .s{flex:1;background:var(--pulse);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
-  .kv{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;font-size:13px;margin:8px 0}
-  .kv span{color:var(--muted)} .timeline{font-size:12px;max-height:200px;overflow:auto}
-  .timeline div{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+  .hide{display:none}
+  .empty{color:var(--muted);padding:18px 0;text-align:center}
+  .avatar{border-radius:50%;flex:0 0 auto}
+
+  .bars{display:flex;flex-direction:column;gap:7px}
+  .bar-row{display:grid;grid-template-columns:160px 1fr 48px;align-items:center;gap:10px;font-size:12.5px}
+  .bar-track{height:18px;background:rgba(255,255,255,.05);border-radius:6px;overflow:hidden}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--pulse),var(--data));border-radius:6px}
+  .spark{display:flex;align-items:flex-end;gap:3px;height:96px}
+  .spark .s{flex:1;background:linear-gradient(180deg,var(--pulse),rgba(139,92,246,.25));border-radius:3px 3px 0 0;min-height:2px}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:grid;place-items:center;padding:24px;z-index:60}
+  .modal-card{background:var(--panel-solid);border:1px solid var(--line);border-radius:18px;padding:24px;max-width:780px;width:100%;max-height:88vh;overflow:auto;box-shadow:var(--shadow)}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;font-size:13px;margin:10px 0 16px}
+  .kv span{color:var(--muted)} .kv b{font-weight:600}
+  .timeline{font-size:12px;max-height:220px;overflow:auto;border:1px solid var(--line-soft);border-radius:var(--radius-sm);padding:8px 12px}
+  .timeline div{padding:5px 0;border-bottom:1px solid var(--line-soft)} .timeline div:last-child{border:0}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1b1730;border:1px solid var(--line);
+         border-radius:13px;padding:12px 18px;box-shadow:0 10px 36px rgba(0,0,0,.55);z-index:90;display:flex;align-items:center;gap:10px;max-width:80vw}
+  .toast.bad{border-color:rgba(244,63,94,.4)} .toast.ok{border-color:rgba(52,211,153,.4)}
+
+  @media(max-width:820px){
+    .wrap{grid-template-columns:1fr}
+    .rail{flex-direction:row;height:auto;position:static;align-items:center;overflow-x:auto;border-right:none;border-bottom:1px solid var(--line)}
+    .brand{margin:0 8px 0 0} .nav{width:auto} .nav span{display:none} .rail-foot{margin:0 0 0 auto;flex-direction:row}
+    .cards,.cards.six{grid-template-columns:repeat(2,1fr)}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <nav class="rail">
-    <div class="brand"><span class="dot"></span>PulseBoost</div>
-    <button class="nav on" data-tab="dash">Tableau de bord</button>
-    <button class="nav" data-tab="analytics">Analytics</button>
-    <button class="nav" data-tab="churn">Churn</button>
-    <button class="nav" data-tab="keys">Clés</button>
-    <button class="nav" data-tab="users">Utilisateurs</button>
-    <button class="nav" data-tab="logs">Logs</button>
-    <button class="nav" data-tab="blacklist">Blacklist</button>
-    <button class="nav" data-tab="flags">Features</button>
-    <span class="live" id="live">● live</span>
+    <div class="brand"><span class="pulse-dot"></span>PulseBoost</div>
+    <button class="nav on" data-tab="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Tableau de bord</span></button>
+    <button class="nav" data-tab="analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg><span>Analytics</span></button>
+    <button class="nav" data-tab="churn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v6h-6"/></svg><span>Churn</span></button>
+    <button class="nav" data-tab="keys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 20 3l1 1-2 2 1 1-2 2-1-1-2 2"/></svg><span>Clés</span></button>
+    <button class="nav" data-tab="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg><span>Utilisateurs</span></button>
+    <button class="nav" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg><span>Logs</span></button>
+    <button class="nav" data-tab="blacklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span>Blacklist</span></button>
+    <button class="nav" data-tab="flags"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V4h12l-2 4 2 4H4"/></svg><span>Features</span></button>
+    <div class="rail-foot">
+      <div class="live"><i></i><span>temps réel</span></div>
+      <a class="logout" href="/admin/logout"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Déconnexion</span></a>
+    </div>
   </nav>
+
   <main>
-    <!-- DASH -->
-    <section id="dash">
-      <h1>Tableau de bord</h1>
-      <div class="cards">
-        <div class="stat"><b id="s-users">–</b><span>Utilisateurs</span></div>
-        <div class="stat"><b id="s-active">–</b><span>Abonnements actifs</span></div>
-        <div class="stat"><b id="s-keys">–</b><span>Clés générées</span></div>
-        <div class="stat"><b id="s-alerts">–</b><span>Alertes ouvertes</span></div>
-      </div>
-      <div class="card">
-        <h2>Alertes en temps réel</h2>
-        <div id="alerts"></div>
-      </div>
-    </section>
-
-    <!-- ANALYTICS -->
-    <section id="analytics" class="hide">
-      <h1>Analytics</h1>
-      <div class="cards" style="grid-template-columns:repeat(6,1fr)">
-        <div class="stat"><b id="a-dau">–</b><span>Actifs 24h</span></div>
-        <div class="stat"><b id="a-wau">–</b><span>Actifs 7j</span></div>
-        <div class="stat"><b id="a-new">–</b><span>Nouveaux 7j</span></div>
-        <div class="stat"><b id="a-conv">–</b><span>Conversion Pro</span></div>
-        <div class="stat"><b id="a-score">–</b><span>Score moyen PC</span></div>
-        <div class="stat"><b id="a-churn">–</b><span>Churn 30j</span></div>
-      </div>
-      <div class="card"><h2>Activité (14 jours)</h2><div id="chart-active"></div></div>
-      <div class="card"><h2>Activations / jour (14 jours)</h2><div id="chart-redeem"></div></div>
-      <div class="card"><h2>Optimisations les plus appliquées</h2><div id="top-tweaks"></div></div>
-      <div class="card"><h2>Répartition des plans</h2><div id="plan-mix"></div></div>
-    </section>
-
-    <!-- CHURN -->
-    <section id="churn" class="hide">
-      <h1>Churn — pourquoi ils partent</h1>
-      <div class="card"><h2>Raisons de désabonnement</h2><div id="churn-reasons"></div></div>
-      <div class="card"><h2>Expire dans &lt; 7 jours (à relancer)</h2>
-        <table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expire</th><th></th></tr></thead><tbody id="churn-expiring"></tbody></table></div>
-      <div class="card"><h2>Déjà churn</h2>
-        <table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expiré le</th><th></th></tr></thead><tbody id="churn-churned"></tbody></table></div>
-      <div class="card"><h2>Retours récents</h2><div id="churn-recent"></div></div>
-    </section>
-
-    <!-- KEYS -->
-    <section id="keys" class="hide">
-      <h1>Clés</h1>
-      <div class="card">
-        <h2>Générer</h2>
-        <div class="row">
-          <select id="k-plan"><option value="monthly">Mensuel (30j)</option><option value="lifetime">Lifetime</option></select>
-          <input id="k-qty" type="number" value="1" min="1" max="100" style="width:80px" />
-          <input id="k-dm" placeholder="DM à (ID Discord, optionnel)" style="width:200px" />
-          <input id="k-note" placeholder="note (optionnel)" style="flex:1;min-width:140px" />
-          <button class="btn primary" onclick="genKeys()">Générer</button>
+    <div class="topbar">
+      <div><h1 id="page-title">Tableau de bord</h1><div class="sub" id="page-sub">Vue d'ensemble en temps réel</div></div>
+    </div>
+    <div class="content">
+      <!-- DASH -->
+      <section id="dash">
+        <div class="cards">
+          <div class="stat"><b id="s-users">—</b><span>Utilisateurs</span></div>
+          <div class="stat"><b id="s-active">—</b><span>Abonnements actifs</span></div>
+          <div class="stat"><b id="s-keys">—</b><span>Clés générées</span></div>
+          <div class="stat"><b id="s-alerts">—</b><span>Alertes ouvertes</span></div>
         </div>
-        <div id="k-out" class="mono muted"></div>
-      </div>
-      <div class="card">
-        <div class="row"><h2 style="margin:0">Toutes les clés</h2>
-          <input id="k-search" placeholder="filtrer…" oninput="renderKeys()" style="margin-left:auto" /></div>
-        <table><thead><tr><th>Clé</th><th>Plan</th><th>Compte Discord</th><th>Expire</th><th>État</th><th></th></tr></thead>
-        <tbody id="k-rows"></tbody></table>
-      </div>
-    </section>
+        <div class="card"><h2>Alertes en temps réel</h2><div id="alerts"><div class="empty">Chargement…</div></div></div>
+      </section>
 
-    <!-- USERS -->
-    <section id="users" class="hide">
-      <h1>Utilisateurs</h1>
-      <div class="card">
-        <table><thead><tr><th>Discord</th><th>ID</th><th>Plan</th><th>Appareils</th><th>Dernier login</th><th>Accès</th></tr></thead>
-        <tbody id="u-rows"></tbody></table>
-      </div>
-    </section>
-
-    <!-- LOGS -->
-    <section id="logs" class="hide">
-      <h1>Logs complets</h1>
-      <div class="card"><table><thead><tr><th>Quand</th><th>Type</th><th>Discord</th><th>Détail</th><th>IP</th></tr></thead>
-      <tbody id="l-rows"></tbody></table></div>
-    </section>
-
-    <!-- BLACKLIST -->
-    <section id="blacklist" class="hide">
-      <h1>Blacklist anti-crack</h1>
-      <p class="muted" style="margin-bottom:12px">Postes (HWID) bloqués suite à une falsification détectée, ou ajoutés manuellement. Un HWID blacklisté est refusé hors-ligne (marqueur local) ET en ligne (ce serveur). Les clés du compte associé sont révoquées.</p>
-      <div class="card">
-        <div class="row">
-          <input id="bl-hwid" placeholder="HWID (hash) à bloquer" style="flex:1;min-width:200px" />
-          <input id="bl-reason" placeholder="raison" />
-          <button class="btn bad" onclick="addBl()">Blacklister</button>
+      <!-- ANALYTICS -->
+      <section id="analytics" class="hide">
+        <div class="cards six">
+          <div class="stat six"><b id="a-dau">—</b><span>Actifs 24h</span></div>
+          <div class="stat six"><b id="a-wau">—</b><span>Actifs 7j</span></div>
+          <div class="stat six"><b id="a-new">—</b><span>Nouveaux 7j</span></div>
+          <div class="stat six"><b id="a-conv">—</b><span>Conversion Pro</span></div>
+          <div class="stat six"><b id="a-score">—</b><span>Score moyen PC</span></div>
+          <div class="stat six"><b id="a-churn">—</b><span>Churn 30j</span></div>
         </div>
-        <table><thead><tr><th>HWID</th><th>Compte</th><th>Raison</th><th>Quand</th><th></th></tr></thead>
-        <tbody id="bl-rows"></tbody></table>
-      </div>
-    </section>
+        <div class="card"><h2>Activité (14 jours)</h2><div id="chart-active"></div></div>
+        <div class="card"><h2>Activations / jour (14 jours)</h2><div id="chart-redeem"></div></div>
+        <div class="card"><h2>Optimisations les plus appliquées</h2><div id="top-tweaks"></div></div>
+        <div class="card"><h2>Répartition des plans</h2><div id="plan-mix"></div></div>
+      </section>
 
-    <!-- FLAGS -->
-    <section id="flags" class="hide">
-      <h1>Feature flags</h1>
-      <p class="muted" style="margin-bottom:12px">Active/désactive des modules à distance, ou change leur portée (gratuit / Pro). Appliqué au prochain heartbeat des clients.</p>
-      <div class="card"><table><thead><tr><th>Module</th><th>Actif</th><th>Portée</th></tr></thead>
-      <tbody id="f-rows"></tbody></table></div>
-    </section>
+      <!-- CHURN -->
+      <section id="churn" class="hide">
+        <div class="card"><h2>Raisons de désabonnement</h2><div id="churn-reasons"></div></div>
+        <div class="card"><h2>Expire dans &lt; 7 jours (à relancer)</h2>
+          <table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expire</th><th></th></tr></thead><tbody id="churn-expiring"></tbody></table></div>
+        <div class="card"><h2>Déjà churn</h2>
+          <table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expiré le</th><th></th></tr></thead><tbody id="churn-churned"></tbody></table></div>
+        <div class="card"><h2>Retours récents</h2><div id="churn-recent"></div></div>
+      </section>
+
+      <!-- KEYS -->
+      <section id="keys" class="hide">
+        <div class="card">
+          <h2>Générer des clés</h2>
+          <div class="row">
+            <select id="k-plan">
+              <option value="weekly">Hebdo (7j)</option>
+              <option value="monthly" selected>Mensuel (30j)</option>
+              <option value="quarterly">Trimestriel (90j)</option>
+              <option value="lifetime">Lifetime</option>
+            </select>
+            <input id="k-days" type="number" placeholder="jours (sinon selon plan)" min="1" style="width:170px" />
+            <input id="k-qty" type="number" value="1" min="1" max="100" style="width:80px" title="quantité" />
+            <input id="k-dm" placeholder="DM à (ID Discord, optionnel)" style="width:210px" />
+            <input id="k-note" placeholder="note (optionnel)" style="flex:1;min-width:140px" />
+            <button class="btn primary" id="btn-genkey">Générer</button>
+          </div>
+          <div id="k-out" class="mono muted" style="margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <div class="between"><h2 style="margin:0">Toutes les clés</h2>
+            <input id="k-search" placeholder="filtrer…" style="width:220px" /></div>
+          <table><thead><tr><th>Clé</th><th>Plan</th><th>Compte Discord</th><th>Expire</th><th>État</th><th></th></tr></thead>
+          <tbody id="k-rows"></tbody></table>
+        </div>
+      </section>
+
+      <!-- USERS -->
+      <section id="users" class="hide">
+        <div class="card">
+          <div class="between"><h2 style="margin:0">Utilisateurs</h2>
+            <input id="u-search" placeholder="filtrer (pseudo / ID)…" style="width:240px" /></div>
+          <table><thead><tr><th>Discord</th><th>ID</th><th>Plan</th><th>Appareils</th><th>Dernier login</th><th>Actions</th></tr></thead>
+          <tbody id="u-rows"></tbody></table>
+        </div>
+      </section>
+
+      <!-- LOGS -->
+      <section id="logs" class="hide">
+        <div class="card"><div class="between"><h2 style="margin:0">Logs complets</h2>
+          <button class="btn sm" id="btn-logs-refresh">Rafraîchir</button></div>
+          <table><thead><tr><th>Quand</th><th>Type</th><th>Discord</th><th>Détail</th><th>IP</th></tr></thead>
+          <tbody id="l-rows"></tbody></table></div>
+      </section>
+
+      <!-- BLACKLIST -->
+      <section id="blacklist" class="hide">
+        <div class="card">
+          <h2>Blacklist anti-crack</h2>
+          <p class="muted tiny" style="margin-bottom:14px">Postes (HWID) bloqués suite à une falsification, ou ajoutés manuellement. Un HWID blacklisté est refusé hors-ligne ET en ligne ; les clés du compte associé sont révoquées.</p>
+          <div class="row" style="margin-bottom:6px">
+            <input id="bl-hwid" placeholder="HWID (hash) à bloquer" style="flex:1;min-width:200px" />
+            <input id="bl-reason" placeholder="raison" />
+            <button class="btn bad" id="btn-bl-add">Blacklister</button>
+          </div>
+          <table><thead><tr><th>HWID</th><th>Compte</th><th>Raison</th><th>Quand</th><th></th></tr></thead><tbody id="bl-rows"></tbody></table>
+        </div>
+      </section>
+
+      <!-- FLAGS -->
+      <section id="flags" class="hide">
+        <div class="card">
+          <h2>Feature flags</h2>
+          <p class="muted tiny" style="margin-bottom:14px">Active/désactive des modules à distance, ou change leur portée (gratuit / Pro). Appliqué au prochain heartbeat des clients.</p>
+          <table><thead><tr><th>Module</th><th>Actif</th><th>Portée</th></tr></thead><tbody id="f-rows"></tbody></table>
+        </div>
+      </section>
+    </div>
   </main>
 </div>
-<div id="modal" class="modal hide" onclick="if(event.target===this)closeModal()">
-  <div class="modal-card" id="modal-body"></div>
-</div>
+
+<div id="modal" class="modal hide"><div class="modal-card" id="modal-body"></div></div>
 
 <script>
-const api = (p, body) => fetch(p, body ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) } : {})
-  .then(r => { if (r.status===401) location.href="/admin/login"; return r.json(); });
+"use strict";
 const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
-// navigation
-let KEYS=[], USERS=[];
-document.querySelectorAll(".nav").forEach(n => n.onclick = () => {
-  document.querySelectorAll(".nav").forEach(x=>x.classList.remove("on")); n.classList.add("on");
-  ["dash","analytics","churn","keys","users","logs","blacklist","flags"].forEach(t => document.getElementById(t).classList.toggle("hide", t!==n.dataset.tab));
-  if (n.dataset.tab==="analytics") loadAnalytics();
-  if (n.dataset.tab==="churn") loadChurn();
-  if (n.dataset.tab==="keys") loadKeys();
-  if (n.dataset.tab==="users") loadUsers();
-  if (n.dataset.tab==="logs") loadLogs();
-  if (n.dataset.tab==="blacklist") loadBl();
-  if (n.dataset.tab==="flags") loadFlags();
-});
+let toastTimer;
+function toast(msg, type=""){ let t=$("toast"); if(!t){ t=document.createElement("div"); t.id="toast"; document.body.appendChild(t);}
+  t.className="toast "+type; t.textContent=msg; clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.remove(),3500); }
 
-// helpers graphiques (zéro dépendance)
-function spark(el, data){ const max=Math.max(1,...data.map(d=>d.c));
-  el.innerHTML = `<div class="spark">${data.map(d=>`<div class="s" style="height:${Math.round(d.c/max*100)}%" title="${d.d}: ${d.c}"></div>`).join("")}</div>
-    <div class="muted" style="font-size:11px;margin-top:4px;display:flex;justify-content:space-between"><span>${data[0]?.d||""}</span><span>${data.at(-1)?.d||""}</span></div>`; }
-function bars(el, rows, label){ const max=Math.max(1,...rows.map(r=>r.c));
-  el.innerHTML = rows.length? `<div class="bars">${rows.map(r=>`<div class="bar-row"><span class="mono">${label(r)}</span>
-    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.c/max*100)}%"></div></div><b>${r.c}</b></div>`).join("")}</div>`
-    : '<p class="muted">Pas encore de données.</p>'; }
-
-async function loadAnalytics(){ const a=await api("/admin/api/analytics");
-  $("a-dau").textContent=a.dau; $("a-wau").textContent=a.wau; $("a-new").textContent=a.newUsers;
-  $("a-conv").textContent=a.conversion+"%"; $("a-score").textContent=a.avgScore??"–"; $("a-churn").textContent=a.churned30;
-  spark(document.getElementById("chart-active"), a.activeByDay);
-  spark(document.getElementById("chart-redeem"), a.redeemsByDay);
-  bars(document.getElementById("top-tweaks"), a.topTweaks, r=>r.detail||"?");
-  bars(document.getElementById("plan-mix"), a.planMix, r=>r.plan);
+// Appel API robuste : gère 401 (redirige vers login), erreurs réseau/JSON sans tout casser.
+async function api(p, body){
+  try{
+    const r = await fetch(p, body ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) } : {});
+    if(r.status===401){ location.href="/admin/login"; return null; }
+    const data = await r.json().catch(()=>null);
+    if(!r.ok){ toast((data && data.error) || ("Erreur "+r.status), "bad"); return null; }
+    return data;
+  }catch(e){ toast("Réseau indisponible", "bad"); return null; }
 }
 
-async function loadChurn(){ const c=await api("/admin/api/churn");
-  bars(document.getElementById("churn-reasons"), c.reasons, r=>r.reason||"(vide)");
-  document.getElementById("churn-expiring").innerHTML = c.expiring.length? c.expiring.map(x=>`<tr>
-    <td>${x.username||x.discord_id}</td><td>${x.plan}</td><td>${new Date(x.expires_at).toLocaleString("fr-FR")}</td>
-    <td><button class="btn sm" onclick="dm('${x.discord_id}')">relancer en DM</button></td></tr>`).join("")
-    : '<tr><td colspan="4" class="muted">Personne n\'expire bientôt.</td></tr>';
-  document.getElementById("churn-churned").innerHTML = c.churned.length? c.churned.map(x=>`<tr>
-    <td>${x.username||x.discord_id}</td><td>${x.plan}</td><td>${new Date(x.expires_at).toLocaleString("fr-FR")}</td>
-    <td><button class="btn sm" onclick="dm('${x.discord_id}')">offre retour</button></td></tr>`).join("")
-    : '<tr><td colspan="4" class="muted">Aucun churn.</td></tr>';
-  document.getElementById("churn-recent").innerHTML = c.recent.length? c.recent.map(r=>`<div class="alert info">
-    <span><b>${r.username||"?"}</b> — ${r.reason} ${r.comment?`· <span class="muted">${r.comment}</span>`:""}</span>
-    <span class="muted">${new Date(r.at).toLocaleDateString("fr-FR")}</span></div>`).join("")
-    : '<p class="muted">Aucun retour pour l\'instant.</p>'; }
-
-// Formate une durée (ms) en "Xh Ym" / "Xm".
+// --- format ---
+const dt = (v) => v ? new Date(String(v).replace(" ","T")+"Z").toLocaleString("fr-FR") : "—";
+const dday = (v) => v ? new Date(String(v).replace(" ","T")+"Z").toLocaleDateString("fr-FR") : "—";
 function fmtDur(ms){ const m=Math.round((ms||0)/60000); if(m<1)return "< 1 min"; const h=Math.floor(m/60); return h?`${h} h ${m%60} min`:`${m} min`; }
-function dt(v){ return v?new Date(String(v).replace(" ","T")+"Z").toLocaleString("fr-FR"):"–"; }
+const avatarUrl = (id,hash,size=32) => hash ? `https://cdn.discordapp.com/avatars/${id}/${esc(hash)}.png?size=${size}` : "https://cdn.discordapp.com/embed/avatars/0.png";
 
-// analyse détaillée d'un client
-async function detail(id){ const d=await api("/admin/api/user?discord_id="+id);
-  const s=d.snapshot, hw=s?.hw||{}, u=d.user, us=d.usage||{};
-  document.getElementById("modal-body").innerHTML = `
-    <div class="row" style="justify-content:space-between;align-items:flex-start">
-      <div class="row" style="gap:14px">
-        <img src="${d.avatar}" alt="" width="64" height="64" style="border-radius:14px;border:1px solid var(--line)"
-             onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" />
-        <div>
-          <h2 style="margin:0">${u.username||id} ${u.banned?'<span class="pill bad">banni</span>':''}</h2>
-          <div class="mono muted" style="font-size:12px">ID ${id}</div>
-          <div class="muted" style="font-size:12px">Compte vu depuis le ${dt(u.created_at)}</div>
-        </div>
+// --- navigation ---
+const TABS = {
+  dash:["Tableau de bord","Vue d'ensemble en temps réel", null],
+  analytics:["Analytics","Acquisition, conversion, rétention", loadAnalytics],
+  churn:["Churn","Pourquoi les abonnés partent", loadChurn],
+  keys:["Clés","Génération et gestion des licences", loadKeys],
+  users:["Utilisateurs","Comptes, appareils et actions", loadUsers],
+  logs:["Logs","Journal complet des évènements", loadLogs],
+  blacklist:["Blacklist","Postes (HWID) bloqués", loadBl],
+  flags:["Features","Modules et portée gratuit/Pro", loadFlags],
+};
+document.querySelectorAll(".nav").forEach((n) => n.addEventListener("click", () => {
+  const tab = n.dataset.tab;
+  document.querySelectorAll(".nav").forEach((x)=>x.classList.toggle("on", x===n));
+  Object.keys(TABS).forEach((t)=>$(t).classList.toggle("hide", t!==tab));
+  const [title,sub,loader] = TABS[tab];
+  $("page-title").textContent=title; $("page-sub").textContent=sub;
+  if(loader) loader();
+}));
+
+// --- graphiques (zéro dépendance) ---
+function spark(el, data){ data=data||[]; const max=Math.max(1,...data.map(d=>d.c));
+  el.innerHTML = data.length ? `<div class="spark">${data.map(d=>`<div class="s" style="height:${Math.round(d.c/max*100)}%" title="${esc(d.d)}: ${d.c}"></div>`).join("")}</div>
+    <div class="muted tiny" style="margin-top:6px;display:flex;justify-content:space-between"><span>${esc(data[0]?.d||"")}</span><span>${esc(data.at(-1)?.d||"")}</span></div>`
+    : '<p class="empty">Pas encore de données.</p>'; }
+function bars(el, rows, label){ rows=rows||[]; const max=Math.max(1,...rows.map(r=>r.c));
+  el.innerHTML = rows.length ? `<div class="bars">${rows.map(r=>`<div class="bar-row"><span class="mono" title="${esc(label(r))}">${esc(label(r))}</span>
+    <div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.c/max*100)}%"></div></div><b>${r.c}</b></div>`).join("")}</div>`
+    : '<p class="empty">Pas encore de données.</p>'; }
+
+// --- Dashboard ---
+async function loadStats(){ const s=await api("/admin/api/stats"); if(!s)return;
+  $("s-users").textContent=s.users; $("s-active").textContent=s.active; $("s-keys").textContent=s.keys; $("s-alerts").textContent=s.alerts; }
+async function loadAlerts(){ const a=await api("/admin/api/alerts"); if(a) renderAlerts(a); }
+function renderAlerts(list){ $("alerts").innerHTML = list.length ? list.map(a=>`
+  <div class="alert ${esc(a.level)}">
+    <span><span class="pill ${esc(a.level)}">${esc(a.level)}</span> ${esc(a.message)} <span class="muted">· ${dt(a.at)}</span></span>
+    ${a.resolved?'<span class="muted tiny">résolu</span>':`<button class="btn sm" onclick="resolveAlert(${a.id})">OK</button>`}
+  </div>`).join("") : '<div class="empty">Aucune alerte.</div>'; }
+async function resolveAlert(id){ await api("/admin/api/alerts/resolve",{id}); loadAlerts(); }
+
+// --- Analytics ---
+async function loadAnalytics(){ const a=await api("/admin/api/analytics"); if(!a)return;
+  $("a-dau").textContent=a.dau; $("a-wau").textContent=a.wau; $("a-new").textContent=a.newUsers;
+  $("a-conv").textContent=(a.conversion??0)+"%"; $("a-score").textContent=a.avgScore??"—"; $("a-churn").textContent=a.churned30;
+  spark($("chart-active"), a.activeByDay); spark($("chart-redeem"), a.redeemsByDay);
+  bars($("top-tweaks"), a.topTweaks, r=>r.detail||"?"); bars($("plan-mix"), a.planMix, r=>r.plan); }
+
+// --- Churn ---
+async function loadChurn(){ const c=await api("/admin/api/churn"); if(!c)return;
+  bars($("churn-reasons"), c.reasons, r=>r.reason||"(vide)");
+  $("churn-expiring").innerHTML = c.expiring.length ? c.expiring.map(x=>`<tr>
+    <td>${esc(x.username||x.discord_id)}</td><td>${esc(x.plan)}</td><td>${dt(x.expires_at)}</td>
+    <td><button class="btn sm" onclick="dm('${x.discord_id}')">relancer en DM</button></td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Personne n’expire bientôt.</td></tr>';
+  $("churn-churned").innerHTML = c.churned.length ? c.churned.map(x=>`<tr>
+    <td>${esc(x.username||x.discord_id)}</td><td>${esc(x.plan)}</td><td>${dt(x.expires_at)}</td>
+    <td><button class="btn sm" onclick="dm('${x.discord_id}')">offre retour</button></td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Aucun churn.</td></tr>';
+  $("churn-recent").innerHTML = c.recent.length ? c.recent.map(r=>`<div class="alert info">
+    <span><b>${esc(r.username||"?")}</b> — ${esc(r.reason)} ${r.comment?`· <span class="muted">${esc(r.comment)}</span>`:""}</span>
+    <span class="muted tiny">${dday(r.at)}</span></div>`).join("")
+    : '<div class="empty">Aucun retour pour l’instant.</div>'; }
+
+// --- Clés ---
+let KEYS=[];
+async function loadKeys(){ const k=await api("/admin/api/keys"); KEYS=k||[]; renderKeys(); }
+function renderKeys(){ const q=($("k-search").value||"").toLowerCase();
+  const rows = KEYS.filter(k=>JSON.stringify(k).toLowerCase().includes(q));
+  $("k-rows").innerHTML = rows.length ? rows.map(k=>{
+    const state = k.revoked?'<span class="pill bad">révoquée</span>':k.discord_id?'<span class="pill ok">active</span>':'<span class="pill info">libre</span>';
+    return `<tr><td class="mono">${esc(k.key)}</td><td>${esc(k.plan)}</td><td class="mono">${esc(k.discord_id||"—")}</td>
+      <td>${dday(k.expires_at)}</td><td>${state}</td>
+      <td>${k.revoked?"":`<button class="btn sm bad" onclick="revoke('${esc(k.key)}')">révoquer</button>
+      <button class="btn sm" onclick="unbind('${esc(k.key)}')">délier</button>`}</td></tr>`;
+  }).join("") : '<tr><td colspan="6" class="empty">Aucune clé.</td></tr>'; }
+async function genKeys(){
+  const plan=$("k-plan").value;
+  const fallback={weekly:7,monthly:30,quarterly:90,lifetime:0}[plan];
+  const days = plan==="lifetime" ? 0 : (parseInt($("k-days").value,10) || fallback);
+  const r=await api("/admin/api/keys",{plan,days,qty:+$("k-qty").value,note:$("k-note").value||null,dm_to:$("k-dm").value.trim()||null});
+  if(!r)return; $("k-out").textContent = "Généré : "+r.keys.join("  ·  "); toast(`${r.keys.length} clé(s) générée(s)`,"ok"); loadKeys(); loadStats(); }
+async function revoke(key){ if(!confirm("Révoquer la clé "+key+" ?"))return; await api("/admin/api/revoke",{key}); toast("Clé révoquée"); loadKeys(); }
+async function unbind(key){ await api("/admin/api/unbind",{key}); toast("Clé déliée"); loadKeys(); }
+
+// --- Utilisateurs ---
+let USERS=[];
+async function loadUsers(){ const u=await api("/admin/api/users"); USERS=u||[]; renderUsers(); }
+function renderUsers(){ const q=($("u-search").value||"").toLowerCase();
+  const rows = USERS.filter(u=>((u.username||"")+" "+u.discord_id).toLowerCase().includes(q));
+  $("u-rows").innerHTML = rows.length ? rows.map(u=>`
+    <tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="avatar" src="${avatarUrl(u.discord_id,u.avatar,32)}" width="24" height="24" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"/>${esc(u.username||"—")}${u.banned?' <span class="pill bad">banni</span>':''}</span></td>
+    <td class="mono">${esc(u.discord_id)}</td><td>${u.plan?`<span class="pill ok">${esc(u.plan)}</span>`:'<span class="muted">free</span>'}</td>
+    <td>${u.devices}</td><td>${dt(u.last_login)}</td>
+    <td><div class="row" style="gap:6px;flex-wrap:nowrap">
+      <button class="btn sm" onclick="detail('${u.discord_id}')">analyse</button>
+      ${u.banned?`<button class="btn sm" onclick="ban('${u.discord_id}',0)">débannir</button>`
+                :`<button class="btn sm bad" onclick="ban('${u.discord_id}',1)">bannir</button>`}
+      <button class="btn sm" onclick="cmd('${u.discord_id}','force_logout')">déco</button>
+      <button class="btn sm" onclick="msg('${u.discord_id}')">alerte</button>
+      <button class="btn sm" onclick="dm('${u.discord_id}')">DM</button>
+      <button class="btn sm" onclick="role('${u.discord_id}','add')">Pro+</button>
+      <button class="btn sm" onclick="role('${u.discord_id}','remove')">Pro−</button>
+    </div></td></tr>`).join("") : '<tr><td colspan="6" class="empty">Aucun utilisateur.</td></tr>'; }
+async function ban(discord_id,banned){ if(banned && !confirm("Bannir cet utilisateur (révoque ses clés) ?"))return;
+  await api("/admin/api/ban",{discord_id,banned}); toast(banned?"Utilisateur banni":"Utilisateur débanni"); loadUsers(); loadStats(); }
+async function cmd(discord_id,type,payload=""){ await api("/admin/api/command",{discord_id,type,payload}); toast("Commande envoyée"); }
+function msg(id){ const m=prompt("Message d'alerte à afficher DANS l'app du client :"); if(m) cmd(id,"alert",m); }
+async function dm(id){ const m=prompt("Message à envoyer en DM Discord (via le bot) :"); if(m){ const r=await api("/admin/api/dm",{discord_id:id,message:m}); if(r) toast("DM envoyé"); } }
+async function role(id,action){ await api("/admin/api/role",{discord_id:id,action}); toast(action==="add"?"Rôle Pro ajouté":"Rôle Pro retiré"); }
+
+// --- Détail utilisateur ---
+async function detail(id){ const d=await api("/admin/api/user?discord_id="+encodeURIComponent(id)); if(!d)return;
+  const s=d.snapshot, hw=(s&&s.hw)||{}, u=d.user, us=d.usage||{};
+  const curPlan = (d.keys.find(k=>!k.revoked&&(!k.expires_at||new Date(k.expires_at)>new Date()))||{}).plan || "free";
+  $("modal-body").innerHTML = `
+    <div class="between" style="align-items:flex-start">
+      <div class="row" style="gap:14px;flex-wrap:nowrap">
+        <img class="avatar" src="${esc(d.avatar)}" width="64" height="64" style="border-radius:14px" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"/>
+        <div><h2 style="margin:0">${esc(u.username||id)} ${u.banned?'<span class="pill bad">banni</span>':''}</h2>
+          <div class="mono muted tiny">ID ${esc(id)}</div>
+          <div class="muted tiny">Vu depuis le ${dt(u.created_at)}</div></div>
       </div>
       <button class="btn sm" onclick="closeModal()">fermer</button>
     </div>
-
-    <h2>Profil & utilisation</h2>
+    <h3 style="margin-top:18px">Profil &amp; utilisation</h3>
     <div class="kv">
-      <span>Discord ID</span><b class="mono">${id}</b>
-      <span>Pseudo</span><b>${u.username||"–"}</b>
-      <span>Plan actuel</span><b>${d.keys.find(k=>!k.revoked&&(!k.expires_at||new Date(k.expires_at)>new Date()))?.plan||"free"}</b>
-      <span>Temps d'utilisation (estimé)</span><b>${fmtDur(us.total_ms)}</b>
+      <span>Plan actuel</span><b>${esc(curPlan)}</b>
+      <span>Temps d'utilisation</span><b>${fmtDur(us.total_ms)}</b>
       <span>Sessions</span><b>${us.sessions??0}</b>
       <span>Jours actifs</span><b>${us.active_days??0}</b>
       <span>Connexions (logins)</span><b>${us.logins??0}</b>
@@ -261,113 +411,77 @@ async function detail(id){ const d=await api("/admin/api/user?discord_id="+id);
       <span>Première activité</span><b>${dt(us.first_seen)}</b>
       <span>Dernière activité</span><b>${dt(us.last_seen)}</b>
       <span>Dernière connexion</span><b>${dt(u.last_login)}</b>
-      <span>Score PC</span><b>${s?.score??"–"}/100</b>
-      <span>CPU</span><b>${hw.cpu?.name||"–"}</b>
-      <span>GPU</span><b>${hw.gpu?.name||"–"}</b>
-      <span>RAM</span><b>${hw.ram?.total_gb?hw.ram.total_gb+" GB":"–"}</b>
+      <span>Score PC</span><b>${s?.score??"—"}/100</b>
+      <span>CPU</span><b>${esc(hw.cpu?.name||"—")}</b>
+      <span>GPU</span><b>${esc(hw.gpu?.name||"—")}</b>
+      <span>RAM</span><b>${hw.ram?.total_gb?esc(hw.ram.total_gb)+" GB":"—"}</b>
     </div>
-
-    <h2>Appareils (HWID) — ${d.devices.length}</h2>
+    <h3>Appareils (HWID) — ${d.devices.length}</h3>
     <table><thead><tr><th>HWID</th><th>Étiquette</th><th>Première vue</th><th>Dernière vue</th></tr></thead><tbody>
-      ${d.devices.map(v=>`<tr><td class="mono" title="${v.hwid}">${(v.hwid||"").slice(0,24)}…</td><td>${v.label||"–"}</td><td>${dt(v.first_seen)}</td><td>${dt(v.last_seen)}</td></tr>`).join("")||'<tr><td colspan="4" class="muted">aucun appareil</td></tr>'}
+      ${d.devices.map(v=>`<tr><td class="mono" title="${esc(v.hwid)}">${esc((v.hwid||"").slice(0,24))}…</td><td>${esc(v.label||"—")}</td><td>${dt(v.first_seen)}</td><td>${dt(v.last_seen)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">aucun appareil</td></tr>'}
     </tbody></table>
-
-    <h2>Connexions & IP</h2>
-    <div class="muted" style="font-size:12px;margin-bottom:6px">IP distinctes : ${d.ips&&d.ips.length?d.ips.map(i=>`<span class="mono">${i}</span>`).join(", "):"–"}</div>
+    <h3 style="margin-top:16px">Connexions &amp; IP</h3>
+    <div class="muted tiny" style="margin-bottom:6px">IP distinctes : ${d.ips&&d.ips.length?d.ips.map(i=>`<span class="mono">${esc(i)}</span>`).join(", "):"—"}</div>
     <table><thead><tr><th>IP</th><th>Quand</th></tr></thead><tbody>
-      ${(d.connections||[]).map(c=>`<tr><td class="mono">${c.ip||"–"}</td><td>${dt(c.at)}</td></tr>`).join("")||'<tr><td colspan="2" class="muted">aucune connexion enregistrée</td></tr>'}
+      ${(d.connections||[]).map(c=>`<tr><td class="mono">${esc(c.ip||"—")}</td><td>${dt(c.at)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">aucune connexion</td></tr>'}
     </tbody></table>
-
-    ${d.feedback.length?`<h2>Feedback désabonnement</h2>${d.feedback.map(f=>`<div class="alert warn"><span>${f.reason} — ${f.comment||""}</span><span class="muted">${dt(f.at)}</span></div>`).join("")}`:""}
-    <h2>Clés</h2><table><thead><tr><th>Clé</th><th>Plan</th><th>Expire</th><th>État</th></tr></thead><tbody>
-      ${d.keys.map(k=>`<tr><td class="mono">${k.key}</td><td>${k.plan}</td><td>${k.expires_at?new Date(k.expires_at).toLocaleDateString("fr-FR"):"–"}</td><td>${k.revoked?'<span class="pill bad">révoquée</span>':'<span class="pill ok">active</span>'}</td></tr>`).join("")||'<tr><td colspan="4" class="muted">aucune</td></tr>'}
+    ${d.feedback.length?`<h3 style="margin-top:16px">Feedback désabonnement</h3>${d.feedback.map(f=>`<div class="alert warn"><span>${esc(f.reason)} — ${esc(f.comment||"")}</span><span class="muted tiny">${dt(f.at)}</span></div>`).join("")}`:""}
+    <h3 style="margin-top:16px">Clés</h3>
+    <table><thead><tr><th>Clé</th><th>Plan</th><th>Expire</th><th>État</th></tr></thead><tbody>
+      ${d.keys.map(k=>`<tr><td class="mono">${esc(k.key)}</td><td>${esc(k.plan)}</td><td>${dday(k.expires_at)}</td><td>${k.revoked?'<span class="pill bad">révoquée</span>':'<span class="pill ok">active</span>'}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">aucune</td></tr>'}
     </tbody></table>
-    <h2>Activité récente</h2><div class="timeline">${d.events.map(e=>`<div><span class="mono muted">${dt(e.at)}</span> · ${e.type}${e.detail?" — "+e.detail:""}</div>`).join("")||'<p class="muted">aucun évènement</p>'}</div>
-    <div class="row" style="margin-top:14px">
+    <h3 style="margin-top:16px">Activité récente</h3>
+    <div class="timeline">${d.events.map(e=>`<div><span class="mono muted">${dt(e.at)}</span> · ${esc(e.type)}${e.detail?" — "+esc(e.detail):""}</div>`).join("")||'<div class="empty">aucun évènement</div>'}</div>
+    <div class="row" style="margin-top:16px">
       <button class="btn sm" onclick="dm('${id}')">DM Discord</button>
       <button class="btn sm" onclick="role('${id}','add')">rôle Pro+</button>
-      <button class="btn sm bad" onclick="ban('${id}',1);closeModal()">stop / bannir</button>
+      <button class="btn sm bad" onclick="ban('${id}',1);closeModal()">bannir</button>
     </div>`;
-  document.getElementById("modal").classList.remove("hide");
+  $("modal").classList.remove("hide");
 }
-function closeModal(){ document.getElementById("modal").classList.add("hide"); }
+function closeModal(){ $("modal").classList.add("hide"); }
+$("modal").addEventListener("click",(e)=>{ if(e.target===$("modal")) closeModal(); });
 
-async function loadBl(){ const b=await api("/admin/api/blacklist");
-  document.getElementById("bl-rows").innerHTML = b.length ? b.map(x=>`<tr>
-    <td class="mono">${x.hwid.slice(0,20)}…</td><td class="mono">${x.discord_id||"–"}</td>
-    <td>${x.reason||""}</td><td>${new Date(x.at).toLocaleString("fr-FR")}</td>
-    <td><button class="btn sm" onclick="rmBl('${x.hwid}')">retirer</button></td></tr>`).join("")
-    : '<tr><td colspan="5" class="muted">Aucun poste blacklisté.</td></tr>'; }
-async function addBl(){ const hwid=document.getElementById("bl-hwid").value.trim(); if(!hwid)return;
-  await api("/admin/api/blacklist",{hwid,reason:document.getElementById("bl-reason").value||"manuel"}); loadBl(); }
-async function rmBl(hwid){ await api("/admin/api/unblacklist",{hwid}); loadBl(); }
+// --- Logs ---
+async function loadLogs(){ const l=await api("/admin/api/logs"); if(!l)return;
+  $("l-rows").innerHTML = l.length ? l.map(x=>`<tr><td>${dt(x.at)}</td>
+    <td><span class="pill info">${esc(x.type)}</span></td><td class="mono">${esc(x.discord_id||"—")}</td>
+    <td>${esc(x.detail||"")}</td><td class="mono">${esc(x.ip||"")}</td></tr>`).join("") : '<tr><td colspan="5" class="empty">Aucun log.</td></tr>'; }
 
-async function loadStats(){ const s=await api("/admin/api/stats");
-  $("s-users").textContent=s.users; $("s-active").textContent=s.active; $("s-keys").textContent=s.keys; $("s-alerts").textContent=s.alerts; }
-async function loadAlerts(){ const a=await api("/admin/api/alerts"); renderAlerts(a); }
-function renderAlerts(list){ document.getElementById("alerts").innerHTML = list.length ? list.map(a=>`
-  <div class="alert ${a.level}">
-    <span><span class="pill ${a.level}">${a.level}</span> ${a.message} <span class="muted">· ${new Date(a.at).toLocaleString("fr-FR")}</span></span>
-    ${a.resolved?'<span class="muted">résolu</span>':`<button class="btn sm" onclick="resolveAlert(${a.id})">OK</button>`}
-  </div>`).join("") : '<p class="muted">Aucune alerte.</p>'; }
-async function resolveAlert(id){ await api("/admin/api/alerts/resolve",{id}); loadAlerts(); }
+// --- Blacklist ---
+async function loadBl(){ const b=await api("/admin/api/blacklist"); if(!b)return;
+  $("bl-rows").innerHTML = b.length ? b.map(x=>`<tr>
+    <td class="mono" title="${esc(x.hwid)}">${esc((x.hwid||"").slice(0,22))}…</td><td class="mono">${esc(x.discord_id||"—")}</td>
+    <td>${esc(x.reason||"")}</td><td>${dt(x.at)}</td>
+    <td><button class="btn sm" onclick="rmBl('${esc(x.hwid)}')">retirer</button></td></tr>`).join("")
+    : '<tr><td colspan="5" class="empty">Aucun poste blacklisté.</td></tr>'; }
+async function addBl(){ const hwid=$("bl-hwid").value.trim(); if(!hwid){ toast("HWID requis","bad"); return; }
+  await api("/admin/api/blacklist",{hwid,reason:$("bl-reason").value||"manuel"}); toast("HWID blacklisté"); $("bl-hwid").value=""; loadBl(); }
+async function rmBl(hwid){ await api("/admin/api/unblacklist",{hwid}); toast("HWID retiré"); loadBl(); }
 
-// flux SSE alertes temps réel
-const es = new EventSource("/admin/api/alerts/stream");
-es.onmessage = e => { loadAlerts(); loadStats(); document.getElementById("live").style.opacity=.4; setTimeout(()=>document.getElementById("live").style.opacity=1,300); };
-
-// clés
-async function loadKeys(){ KEYS = await api("/admin/api/keys"); renderKeys(); }
-function renderKeys(){ const q=(document.getElementById("k-search").value||"").toLowerCase();
-  document.getElementById("k-rows").innerHTML = KEYS.filter(k=>JSON.stringify(k).toLowerCase().includes(q)).map(k=>{
-    const state = k.revoked?'<span class="pill bad">révoquée</span>':k.discord_id?'<span class="pill ok">active</span>':'<span class="pill info">libre</span>';
-    return `<tr><td class="mono">${k.key}</td><td>${k.plan}</td><td class="mono">${k.discord_id||"–"}</td>
-      <td>${k.expires_at?new Date(k.expires_at).toLocaleDateString("fr-FR"):"–"}</td><td>${state}</td>
-      <td>${k.revoked?"":`<button class="btn sm bad" onclick="revoke('${k.key}')">révoquer</button>
-      <button class="btn sm" onclick="unbind('${k.key}')">délier</button>`}</td></tr>`;
-  }).join(""); }
-async function genKeys(){ const r=await api("/admin/api/keys",{plan:$("k-plan").value,qty:+$("k-qty").value,note:$("k-note").value||null,dm_to:$("k-dm").value.trim()||null});
-  document.getElementById("k-out").textContent = r.keys.join("  ·  "); loadKeys(); loadStats(); }
-async function revoke(key){ await api("/admin/api/revoke",{key}); loadKeys(); }
-async function unbind(key){ await api("/admin/api/unbind",{key}); loadKeys(); }
-
-// utilisateurs : accès complet (stop / commandes)
-async function loadUsers(){ USERS = await api("/admin/api/users");
-  document.getElementById("u-rows").innerHTML = USERS.map(u=>`
-    <tr><td><span class="row" style="gap:8px"><img src="${u.avatar?`https://cdn.discordapp.com/avatars/${u.discord_id}/${u.avatar}.png?size=32`:'https://cdn.discordapp.com/embed/avatars/0.png'}" width="24" height="24" style="border-radius:50%" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"/>${u.username||"–"}</span> ${u.banned?'<span class="pill bad">banni</span>':''}</td>
-    <td class="mono">${u.discord_id}</td><td>${u.plan?`<span class="pill ok">${u.plan}</span>`:'<span class="muted">free</span>'}</td>
-    <td>${u.devices}</td><td>${u.last_login?new Date(u.last_login).toLocaleString("fr-FR"):"–"}</td>
-    <td>
-      <button class="btn sm" onclick="detail('${u.discord_id}')">analyse</button>
-      ${u.banned?`<button class="btn sm" onclick="ban('${u.discord_id}',0)">débannir</button>`
-                :`<button class="btn sm bad" onclick="ban('${u.discord_id}',1)">stop / bannir</button>`}
-      <button class="btn sm" onclick="cmd('${u.discord_id}','force_logout')">déconnecter</button>
-      <button class="btn sm" onclick="msg('${u.discord_id}')">alerte app</button>
-      <button class="btn sm" onclick="dm('${u.discord_id}')">DM Discord</button>
-      <button class="btn sm" onclick="role('${u.discord_id}','add')">rôle Pro+</button>
-      <button class="btn sm" onclick="role('${u.discord_id}','remove')">rôle Pro−</button>
-    </td></tr>`).join(""); }
-async function ban(discord_id,banned){ await api("/admin/api/ban",{discord_id,banned}); loadUsers(); loadStats(); }
-async function cmd(discord_id,type,payload=""){ await api("/admin/api/command",{discord_id,type,payload}); }
-function msg(id){ const m=prompt("Message d'alerte à afficher DANS l'app du client :"); if(m) cmd(id,"alert",m); }
-async function dm(id){ const m=prompt("Message à envoyer en DM Discord (via le bot) :"); if(m){ await api("/admin/api/dm",{discord_id:id,message:m}); } }
-async function role(id,action){ await api("/admin/api/role",{discord_id:id,action}); loadUsers(); }
-
-// logs
-async function loadLogs(){ const l=await api("/admin/api/logs");
-  document.getElementById("l-rows").innerHTML = l.map(x=>`<tr><td>${new Date(x.at).toLocaleString("fr-FR")}</td>
-    <td><span class="pill info">${x.type}</span></td><td class="mono">${x.discord_id||"–"}</td>
-    <td>${x.detail||""}</td><td class="mono">${x.ip||""}</td></tr>`).join(""); }
-
-// feature flags
-async function loadFlags(){ const f=await api("/admin/api/flags");
-  document.getElementById("f-rows").innerHTML = f.map(x=>`<tr><td class="mono">${x.name}</td>
-    <td><input type="checkbox" ${x.enabled?"checked":""} onchange="flag('${x.name}',this.checked,null)"></td>
-    <td><select onchange="flag('${x.name}',${x.enabled},this.value)">
+// --- Features ---
+async function loadFlags(){ const f=await api("/admin/api/flags"); if(!f)return;
+  $("f-rows").innerHTML = f.map(x=>`<tr><td class="mono">${esc(x.name)}</td>
+    <td><input type="checkbox" ${x.enabled?"checked":""} onchange="flag('${esc(x.name)}',this.checked,null)"></td>
+    <td><select onchange="flag('${esc(x.name)}',${x.enabled?1:0},this.value)">
       <option value="free" ${x.scope==="free"?"selected":""}>gratuit</option>
       <option value="pro" ${x.scope==="pro"?"selected":""}>Pro</option></select></td></tr>`).join(""); }
-async function flag(name,enabled,scope){ await api("/admin/api/flags",{name,enabled,scope}); }
+async function flag(name,enabled,scope){ await api("/admin/api/flags",{name,enabled,scope}); toast("Flag mis à jour"); }
 
+// --- listeners (pas de onclick global fragile sur les champs) ---
+$("btn-genkey").addEventListener("click", genKeys);
+$("k-search").addEventListener("input", renderKeys);
+$("u-search").addEventListener("input", renderUsers);
+$("btn-bl-add").addEventListener("click", addBl);
+$("btn-logs-refresh").addEventListener("click", loadLogs);
+
+// --- SSE alertes temps réel (avec reconnexion auto par le navigateur) ---
+try{
+  const es = new EventSource("/admin/api/alerts/stream");
+  es.onmessage = () => { loadAlerts(); loadStats(); const l=document.querySelector(".live i"); if(l){ l.style.opacity=.3; setTimeout(()=>l.style.opacity=1,300);} };
+}catch(e){}
+
+// --- init ---
 loadStats(); loadAlerts();
 setInterval(loadStats, 30000);
 </script>
