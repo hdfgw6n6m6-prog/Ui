@@ -95,6 +95,24 @@ async function run() {
   ok((await (await jpost("/admin/api/command", { discord_id: "111", type: "alert", payload: "hi" }, cookie)).json()).queued === true, "commande admin");
   ok("sent" in (await (await jpost("/admin/api/dm", { discord_id: "111", message: "t" }, cookie)).json()), "dm endpoint");
 
+  console.log("=== COMMERCE (annonce / réglages / ventes / grant / RGPD / broadcast / boutique) ===");
+  const ann = await (await jget("/v1/announcement")).json();
+  ok(ann && "message" in ann && "version" in ann && "download_url" in ann, "annonce publique");
+  await jpost("/admin/api/settings", { announcement: "Promo!", latest_version: "1.0.0", download_url: "https://x/y" }, cookie);
+  const set2 = await (await jget("/admin/api/settings", cookie)).json();
+  ok(set2.announcement === "Promo!" && set2.latest_version === "1.0.0", "réglages enregistrés");
+  ok((await (await jget("/v1/announcement")).json()).message === "Promo!", "annonce propagée");
+  const gr = await (await jpost("/admin/api/grant", { discord_id: "111", plan: "monthly" }, cookie)).json();
+  ok(gr.ok === true && /^PB-/.test(gr.key), "grant -> clé Pro offerte");
+  ok((await (await jget("/admin/api/purchases", cookie)).json()).some((p) => p.discord_id === "111" && p.provider === "gift"), "vente/cadeau enregistré");
+  const an2 = await (await jget("/admin/api/analytics", cookie)).json();
+  ok("revenue" in an2 && "sales" in an2 && Array.isArray(an2.salesByDay), "analytics revenue/sales");
+  ok((await (await jpost("/admin/api/forget_email", { discord_id: "111" }, cookie)).json()).ok === true, "RGPD: forget_email");
+  ok((await (await jget("/admin/api/user?discord_id=111", cookie)).json()).user.email === null, "email effacé");
+  ok((await (await jpost("/admin/api/broadcast", { message: "Coucou", channel: "app" }, cookie)).json()).count >= 1, "broadcast in-app");
+  const buyPage = await (await jget("/buy")).text();
+  ok(/PulseBoost/.test(buyPage) && /buy\/login/.test(buyPage), "page boutique (login Discord requis)");
+
   console.log("=== IA sans clé Gemini (échec propre) ===");
   ok([502, 403].includes((await jpost("/v1/analyze", { session: sess, hwid: "hw111", scan: { cpu: {} }, locale: "fr" })).status), "analyze -> 502/403");
   ok([502, 403].includes((await jpost("/v1/chat", { session: sess, hwid: "hw111", messages: [{ role: "user", content: "hi" }] })).status), "chat -> 502/403");

@@ -21,6 +21,15 @@ const config = {
   GEMINI_API_KEY: "",
   GEMINI_MODEL: "gemini-2.0-flash",
 
+  // --- Paiement (Stripe) : boutique sur PUBLIC_URL/buy ---
+  STRIPE_SECRET_KEY: "",        // sk_live_... (ou sk_test_...)
+  STRIPE_WEBHOOK_SECRET: "",    // whsec_... (endpoint webhook : PUBLIC_URL/webhook/stripe)
+  CURRENCY: "eur",
+  PRICE_WEEKLY: "",             // prix EN CENTIMES (ex: 299 = 2,99€). Vide = plan masqué.
+  PRICE_MONTHLY: "",           // ex: 499
+  PRICE_QUARTERLY: "",         // ex: 1199
+  PRICE_LIFETIME: "",          // ex: 2999
+
   // --- Panel admin ---
   // Mot de passe du panel web : permet de se connecter SANS Discord OAuth
   // (donc ça marche en http://IP, sans HTTPS). Laisse vide pour utiliser à la

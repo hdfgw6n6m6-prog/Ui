@@ -196,6 +196,18 @@ npm run tauri build      # installeur NSIS dans src-tauri/target/release/bundle
 
 ## 9. Roadmap — ce qui RESTE à faire
 
+> Ajouts récents v5 (FAIT) — commercialisation : **paiement Stripe** (boutique
+> `PUBLIC_URL/buy` avec login Discord + Checkout ; webhook `/webhook/stripe` →
+> génère/lie la clé + DM + enregistre la vente ; table `purchases`, revenu dans
+> Analytics, onglet **Ventes** du panel). **Collecte email** (scope OAuth `email`,
+> export CSV, RGPD `/forget`). **Réglages** : annonce in-app + version + URL de
+> maj (`/v1/announcement`, bandeau app) ; **broadcast** à tous (in-app/DM).
+> **Cadeau Pro** (`/admin/api/grant`, bot `/grant`). App : bouton « Passer Pro »
+> (ouvre la boutique), bandeau annonce/màj. Commandes bot : `/grant /forget
+> /announce`. Tests : `npm test` (45 assertions). Env : `STRIPE_SECRET_KEY`,
+> `STRIPE_WEBHOOK_SECRET`, `PRICE_*`, `CURRENCY`.
+
+
 > Ajouts récents v4 (FAIT) : **Bot Discord (gateway) pour l'admin par slash commands**
 > (`server/bot.js`, dép. `ws`) — EN PLUS du panel web (non supprimé). Connexion
 > gateway avec `intents:0` (ne lit aucun message), chaque commande verrouillée aux

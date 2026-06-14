@@ -23,6 +23,7 @@ const ONE_CLICK_FREE = ["power_plan_high_perf", "disable_game_dvr", "enable_game
 const ONE_CLICK_PRO = ["disable_sysmain"];
 const RECOMMENDED = new Set([...ONE_CLICK_FREE, ...ONE_CLICK_PRO, "startup_report"]);
 
+const APP_VERSION = "0.1.0"; // doit suivre src-tauri/Cargo.toml
 const HIST = 30; // points d'historique des sparklines
 const pushHist = (arr, v) => [...arr, v].slice(-HIST);
 
@@ -67,6 +68,7 @@ export default function App() {
   const [activeGame, setActiveGame] = useState(null);
   const [profile, setProfile] = useState(null);
   const [autoAdapt, setAutoAdapt] = useState(() => localStorage.getItem("pb_auto_adaptive") === "1");
+  const [announce, setAnnounce] = useState(null);
   const [chat, setChat] = useState([]); // { role: "user"|"assistant", content, action? }
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
@@ -99,6 +101,9 @@ export default function App() {
         ]);
         setScan(s); setHealth(h); setTweaks(t);
       } catch (e) { notify(String(e)); }
+
+      // Annonce / mise à jour (bandeau in-app, public).
+      try { setAnnounce(await invoke("announcement")); } catch {}
 
       // Licence : statut local (offline), login déjà fait ?, puis heartbeat serveur.
       try { setTelemetry(await invoke("telemetry_consent")); } catch {}
@@ -165,6 +170,9 @@ export default function App() {
     catch (e) { notify(String(e)); }
     finally { setFreeBusy(false); }
   };
+
+  const openStore = () => { invoke("open_store").catch((e) => notify(String(e))); };
+  const updateNow = () => { if (announce?.download_url) invoke("open_url", { url: announce.download_url }).catch(() => {}); };
 
   const applyIds = async (ids) => {
     if (!ids.length) { notify("Rien à appliquer : tout est déjà en place."); return; }
@@ -408,6 +416,15 @@ export default function App() {
         </div>
 
         <div className="content-inner">
+          {announce?.message && (
+            <div className="banner"><IconWarn /> <span>{announce.message}</span></div>
+          )}
+          {announce?.version && announce.version !== APP_VERSION && announce.download_url && (
+            <div className="banner update">
+              <span>Nouvelle version <b>{announce.version}</b> disponible.</span>
+              <button className="btn sm" onClick={updateNow}>Mettre à jour</button>
+            </div>
+          )}
           {tab === "pulse" && (
             <>
               <div className="card hero">
@@ -557,6 +574,13 @@ export default function App() {
                       <li><IconCheck /> Mémoire, SysMain, GPU scheduling matériel</li>
                       <li><IconCheck /> Analyse IA détaillée de ton matériel</li>
                     </ul>
+                    <div className="buy-row">
+                      <button className="btn pro-cta lg" onClick={openStore}>
+                        <IconGem width={17} height={17} /> Passer Pro — acheter
+                      </button>
+                      <span className="muted tiny">Paiement sécurisé · clé activée automatiquement sur ton compte</span>
+                    </div>
+                    <p className="muted tiny" style={{ margin: "14px 0 8px" }}>Déjà une clé ? Active-la ci-dessous :</p>
                     {!discordName && !logged ? (
                       <>
                         <p className="muted">Connecte-toi avec Discord, puis active ta clé. La clé se lie à ton compte (pas au PC).</p>

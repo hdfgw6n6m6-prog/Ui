@@ -56,3 +56,14 @@ pub async fn chat(messages: Value, context: Value) -> Result<Value> {
     }
     Ok(resp.json().await?)
 }
+
+/// Annonce + derniere version publiees par le serveur (public, pas d'auth).
+pub async fn announcement() -> Result<Value> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{SERVER}/v1/announcement"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await?;
+    Ok(resp.json().await?)
+}

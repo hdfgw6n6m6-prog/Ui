@@ -40,10 +40,17 @@ const COMMANDS = [
   C("dm", "Envoyer un message privé à un utilisateur", [
     { type: 6, name: "user", description: "Utilisateur", required: true },
     { type: 3, name: "message", description: "Message", required: true }]),
+  C("grant", "Offrir Pro à un utilisateur (clé activée directement)", [
+    { type: 6, name: "user", description: "Utilisateur", required: true },
+    { type: 3, name: "plan", description: "Plan", required: true, choices: [
+      { name: "weekly", value: "weekly" }, { name: "monthly", value: "monthly" },
+      { name: "quarterly", value: "quarterly" }, { name: "lifetime", value: "lifetime" }] }]),
+  C("forget", "RGPD : effacer l'email d'un utilisateur", [{ type: 6, name: "user", description: "Utilisateur", required: true }]),
+  C("announce", "Définir l'annonce affichée dans l'app (vide pour effacer)", [{ type: 3, name: "message", description: "Message (vide = effacer)", required: false }]),
   C("help", "Liste des commandes admin"),
 ];
 
-export function startBot({ db, discord, adminIds = [], log = () => {}, alert = () => {} }) {
+export function startBot({ db, discord, adminIds = [], log = () => {}, alert = () => {}, grantPro = null, setSetting = () => {}, planLabel = {}, planDays = {} }) {
   const TOKEN = process.env.DISCORD_BOT_TOKEN;
   const APP = process.env.DISCORD_CLIENT_ID;
   const GUILD = process.env.DISCORD_GUILD_ID;
@@ -139,8 +146,25 @@ export function startBot({ db, discord, adminIds = [], log = () => {}, alert = (
         log("discord_dm", { discord_id: uid, detail: `-> ${o.user}` });
         return `📩 Message envoyé à <@${o.user}>.`;
       }
+      case "grant": {
+        if (!grantPro || planDays[o.plan] === undefined) return "Plan invalide.";
+        db.prepare("INSERT OR IGNORE INTO users (discord_id) VALUES (?)").run(o.user);
+        const { key } = grantPro(o.user, o.plan, "cadeau (discord)");
+        log("grant", { discord_id: uid, detail: `${o.plan} -> ${o.user}` });
+        discord.safe(() => discord.dmUser(o.user, `🎁 Tu as reçu **PulseBoost Pro ${planLabel[o.plan] || o.plan}** ! Déjà activé — relance l'app. Clé : \`${key}\``));
+        return `🎁 Pro **${planLabel[o.plan] || o.plan}** offert à <@${o.user}> (clé \`${key}\`).`;
+      }
+      case "forget": {
+        const r = db.prepare("UPDATE users SET email=NULL, email_verified=NULL WHERE discord_id=?").run(o.user);
+        log("forget_email", { discord_id: uid, detail: o.user });
+        return r.changes ? `🗑️ Email de <@${o.user}> effacé (RGPD).` : "Aucun email à effacer.";
+      }
+      case "announce": {
+        setSetting("announcement", o.message || "");
+        return o.message ? `📢 Annonce in-app définie :\n> ${o.message}` : "📢 Annonce effacée.";
+      }
       case "help":
-        return "**Commandes admin PulseBoost**\n`/genkey` `/keys` `/revoke` `/ban` `/unban` `/stats` `/blacklist` `/unblacklist` `/userinfo` `/dm`\nToutes réservées aux administrateurs.";
+        return "**Commandes admin PulseBoost**\n`/genkey` `/keys` `/revoke` `/ban` `/unban` `/grant` `/forget` `/announce` `/stats` `/blacklist` `/unblacklist` `/userinfo` `/dm`\nToutes réservées aux administrateurs.";
       default:
         return "Commande inconnue.";
     }

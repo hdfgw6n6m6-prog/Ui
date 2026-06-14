@@ -167,6 +167,10 @@ fn clear(name: &str) { let _ = std::fs::remove_file(dir().join(name)); }
 fn open_browser(url: &str) {
     let _ = Command::new("cmd").args(["/C", "start", "", url]).spawn();
 }
+/// Ouvre la boutique (achat Pro) dans le navigateur.
+pub fn open_store() { open_browser(&format!("{SERVER}/buy")); }
+/// Ouvre une URL arbitraire (ex. lien de mise à jour) dans le navigateur.
+pub fn open_url(url: &str) { open_browser(url); }
 fn rand_u32() -> u32 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos()

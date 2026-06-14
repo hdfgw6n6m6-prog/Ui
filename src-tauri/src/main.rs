@@ -170,6 +170,20 @@ async fn ai_analysis(scan: Value, locale: String) -> Result<Value, String> {
     ai::analyze(scan, &locale).await.map_err(|e| e.to_string())
 }
 
+/// Ouvre la boutique (achat Pro) dans le navigateur par défaut.
+#[tauri::command]
+fn open_store() { license::open_store(); }
+
+/// Ouvre une URL (ex. lien de mise à jour) dans le navigateur.
+#[tauri::command]
+fn open_url(url: String) { license::open_url(&url); }
+
+/// Annonce + dernière version publiées par le serveur (bandeau in-app).
+#[tauri::command]
+async fn announcement() -> Result<Value, String> {
+    ai::announcement().await.map_err(|e| e.to_string())
+}
+
 /// CHAT IA (support PC + app) : relaie l'historique + le contexte au serveur
 /// (qui détient la clé Gemini) et renvoie { reply, action }. L'action proposée
 /// est exécutée par l'app UNIQUEMENT après confirmation de l'utilisateur.
@@ -261,6 +275,9 @@ fn main() {
             free_analysis,
             ai_analysis,
             ai_chat,
+            open_store,
+            open_url,
+            announcement,
             reset_profile,
             game_boost,
             active_game,
