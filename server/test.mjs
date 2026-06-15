@@ -86,6 +86,8 @@ async function run() {
   ok(ud.user && ud.usage && ud.avatar && Array.isArray(ud.connections) && Array.isArray(ud.ips), "fiche complète");
   ok(ud.devices.some((d) => d.hwid === "hw111"), "appareil (entitlement)");
   ok(ud.snapshot?.score === 80, "snapshot (telemetry)");
+  const mem = await (await jget("/admin/api/members", cookie)).json();
+  ok(mem && Array.isArray(mem.members) && "total" in mem && "configured" in mem, "membres serveur: endpoint OK");
   ok(ud.user.email === "tester@example.com", "fiche: email présent");
   const emails = await (await jget("/admin/api/emails", cookie)).json();
   ok(emails.some((e) => e.discord_id === "111" && e.email === "tester@example.com"), "export emails: collecté et listé");

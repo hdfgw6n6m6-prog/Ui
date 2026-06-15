@@ -21,7 +21,6 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as discord from "./discord.js";
-import { startBot } from "./bot.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -513,6 +512,26 @@ app.get("/admin/api/users", admin, (req, res) => res.json(db.prepare(`
   SELECT u.*, (SELECT COUNT(*) FROM devices d WHERE d.discord_id=u.discord_id) devices,
          (SELECT plan FROM keys k WHERE k.discord_id=u.discord_id AND k.revoked=0 ORDER BY expires_at DESC LIMIT 1) plan
   FROM users u ORDER BY last_login DESC LIMIT 500`).all()));
+// TOUS les membres du serveur Discord (via l'effecteur bot). Croisé avec nos comptes.
+app.get("/admin/api/members", admin, async (req, res) => {
+  const proRole = process.env.DISCORD_PRO_ROLE_ID;
+  const members = (await discord.safe(() => discord.listMembers())) || [];
+  const known = new Map(db.prepare("SELECT discord_id, email FROM users").all().map((u) => [u.discord_id, u]));
+  const proIds = new Set(db.prepare(`SELECT DISTINCT discord_id FROM keys WHERE revoked=0 AND discord_id IS NOT NULL AND (expires_at IS NULL OR expires_at>datetime('now'))`).all().map((r) => r.discord_id));
+  const out = members.filter((m) => m.user && !m.user.bot).map((m) => ({
+    id: m.user.id,
+    username: m.user.global_name || m.user.username,
+    nick: m.nick || null,
+    avatar: m.user.avatar,
+    joined_at: m.joined_at,
+    has_pro_role: proRole ? (m.roles || []).includes(proRole) : false,
+    registered: known.has(m.user.id),
+    email: known.get(m.user.id)?.email || null,
+    pro: proIds.has(m.user.id),
+  }));
+  res.json({ total: out.length, members: out, configured: !!process.env.DISCORD_BOT_TOKEN && !!process.env.DISCORD_GUILD_ID });
+});
+
 // Liste des emails collectés (même pour les comptes sans achat). Sert à l'export.
 app.get("/admin/api/emails", admin, (req, res) => res.json(db.prepare(`
   SELECT u.discord_id, u.username, u.email, u.email_verified, u.created_at, u.last_login,
@@ -703,6 +722,3 @@ app.get("/", (req, res) => res.redirect("/admin/login"));
 
 // Écoute sur 0.0.0.0 (toutes interfaces) — requis par le Proxy Manager de l'hébergeur.
 app.listen(process.env.PORT ?? 8787, "0.0.0.0", () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
-
-// Bot Discord (gateway) : commandes admin slash. Le panel web reste actif en parallèle.
-startBot({ db, discord, adminIds: ADMIN_IDS, log, alert, grantPro, setSetting, planLabel: PLAN_LABEL, planDays: PLAN_DAYS });

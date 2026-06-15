@@ -205,13 +205,13 @@ npm run tauri build      # installeur NSIS dans src-tauri/target/release/bundle
 > des clés via panel/bot.)
 
 
-> Ajouts récents v4 (FAIT) : **Bot Discord (gateway) pour l'admin par slash commands**
-> (`server/bot.js`, dép. `ws`) — EN PLUS du panel web (non supprimé). Connexion
-> gateway avec `intents:0` (ne lit aucun message), chaque commande verrouillée aux
-> `ADMIN_DISCORD_IDS`. Commandes : `/genkey /keys /revoke /ban /unban /stats
-> /blacklist /unblacklist /userinfo /dm /help`. ⚠️ inverse volontairement la
-> décision « pas de gateway » de §2 — choix produit assumé. Le bot doit être invité
-> avec le scope `applications.commands`.
+> Ajouts récents v6 (FAIT) : **bot 100% REST (zéro commande Discord)** — le bot
+> gateway/slash a été retiré ; le bot reste un **effecteur** piloté UNIQUEMENT par
+> le panel (DM, rôle, logs, **liste des membres** `discord.listMembers`). **Panel
+> admin entièrement redesigné** (nav groupée, KPI, recherche globale, actions
+> rapides) + onglet **Membres Discord** (`/admin/api/members` : tout le serveur,
+> croisé avec les comptes app, filtres tous/inscrits/pro/hors-app). Conforme à la
+> décision §2 (« pas de gateway, aucune commande »).
 >
 > Ajouts récents v3 (FAIT) : **Assistant IA agentique** (chat Gemini, feature Pro,
 > flag `ai_chat`) — endpoint serveur `/v1/chat`, client `ai::chat`, commande

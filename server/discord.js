@@ -51,6 +51,23 @@ export async function postLog(content) {
   return dapi(`/channels/${process.env.DISCORD_LOG_CHANNEL_ID}/messages`, "POST", { content }).catch(() => {});
 }
 
+/// Liste TOUS les membres du serveur (REST, paginé). Nécessite l'intent privilégié
+/// "Server Members Intent" activé dans le portail Discord (Bot -> Privileged Intents).
+export async function listMembers() {
+  const guild = process.env.DISCORD_GUILD_ID;
+  if (!guild) return [];
+  const out = [];
+  let after = "0";
+  for (let i = 0; i < 30; i++) { // jusqu'à ~30k membres
+    const batch = await dapi(`/guilds/${guild}/members?limit=1000&after=${after}`);
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    out.push(...batch);
+    after = batch[batch.length - 1]?.user?.id;
+    if (batch.length < 1000 || !after) break;
+  }
+  return out;
+}
+
 /// Best-effort : exécute sans jamais faire planter le flux de licence si Discord répond mal.
 export async function safe(fn) {
   try { return await fn(); } catch (e) { console.error("[discord]", e.message); return null; }

@@ -1,14 +1,16 @@
 # Héberger PulseBoost sur un hébergeur de bots Node (un seul VPS/instance)
 
-Le **serveur de licence**, **l'effecteur Discord** (DM, rôle Pro, logs) et le **bot
-Discord** (commandes admin) tournent dans **un seul process Node** (`server.js`).
-Tu n'as donc qu'**une seule chose à héberger** : ce dossier `server/`.
+Le **serveur de licence** et **l'effecteur Discord** (DM, rôle Pro, logs, liste des
+membres) tournent dans **un seul process Node** (`server.js`). Tu n'as donc qu'**une
+seule chose à héberger** : ce dossier `server/`.
 
 > Configuration : tout se règle dans **`config.js`** (pas de `.env`). Les variables
 > d'environnement, si tu en définis, restent prioritaires sur `config.js`.
 >
-> Le bot Discord se connecte au gateway avec `intents:0` (il **ne lit aucun
-> message**) et n'exécute que des **slash commands réservées aux admins**.
+> L'effecteur Discord est **REST pur** : pas de gateway, **aucune commande Discord**.
+> Il est piloté **uniquement** par le panel web. Pour afficher la liste des membres
+> dans le panel, active l'intent **« Server Members »** (portail → Bot → Privileged
+> Intents).
 
 ---
 
@@ -62,9 +64,8 @@ Tout est dans **`config.js`**. Les indispensables : `DISCORD_CLIENT_ID/SECRET`,
 `SESSION_SECRET`, `LICENSE_PRIVATE_KEY`, `ADMIN_DISCORD_IDS`, `GEMINI_API_KEY`,
 et `DATA_DIR` (disque persistant).
 
-> Pour les **commandes admin du bot** : invite le bot avec le scope
-> `applications.commands` (en plus de `bot`), sinon les slash commands
-> n'apparaissent pas. Tape `/help` dans ton serveur pour vérifier.
+> Pour l'onglet **Membres** du panel : active l'intent **« Server Members »**
+> (portail Discord → Bot → Privileged Intents), sinon la liste sera vide.
 
 ## 5. Vérifier que tout marche
 
