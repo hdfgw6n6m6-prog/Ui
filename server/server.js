@@ -24,10 +24,39 @@ import * as discord from "./discord.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.disable("x-powered-by");
+app.set("trust proxy", true); // derrière le reverse-proxy : vraie IP client dans req.ip
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const PUBLIC_URL = process.env.PUBLIC_URL ?? "http://localhost:8787";
+const IS_HTTPS = PUBLIC_URL.startsWith("https");
+const COOKIE_SEC = IS_HTTPS ? "; Secure" : ""; // flag Secure quand on est en HTTPS
+
+// --- En-têtes de sécurité (toutes les réponses) ---
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; " +
+    "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
+    "connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://api.stripe.com");
+  if (IS_HTTPS) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  next();
+});
+
+// --- Limiteur de débit en mémoire (anti brute-force / abus) ---
+const rateBuckets = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const b = rateBuckets.get(key);
+  if (!b || now > b.reset) { rateBuckets.set(key, { n: 1, reset: now + windowMs }); return true; }
+  b.n++;
+  return b.n <= max;
+}
+setInterval(() => { const now = Date.now(); for (const [k, b] of rateBuckets) if (now > b.reset) rateBuckets.delete(k); }, 5 * 60000);
 const ADMIN_IDS = (process.env.ADMIN_DISCORD_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 // --- Plans (durée par plan) ---
@@ -188,6 +217,7 @@ function grantPro(discord_id, plan, note = null) {
 app.post("/v1/redeem", (req, res) => {
   const s = readSession(req.body.session);
   if (!s || s.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  if (!rateLimit("redeem:" + s.id, 12, 60 * 60000)) return res.status(429).json({ error: "Trop de tentatives. Réessaie plus tard." });
   const key = normKey(req.body.key);
   const row = db.prepare("SELECT * FROM keys WHERE key=?").get(key);
   if (!row || row.revoked) { log("redeem_fail", { discord_id: s.id, detail: key }); return res.status(403).json({ error: "Clé invalide ou révoquée." }); }
@@ -323,6 +353,7 @@ function parseJsonLoose(text) {
 app.post("/v1/analyze", async (req, res) => {
   const ss = readSession(req.body.session);
   if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  if (!rateLimit("analyze:" + ss.id, 30, 60 * 60000)) return res.status(429).json({ error: "Trop d'analyses. Réessaie plus tard." });
   // abonnement actif requis
   const active = db.prepare(`SELECT 1 FROM keys WHERE discord_id=? AND revoked=0
     AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`).get(ss.id);
@@ -375,6 +406,7 @@ REGLES STRICTES :
 app.post("/v1/chat", async (req, res) => {
   const ss = readSession(req.body.session);
   if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  if (!rateLimit("chat:" + ss.id, 60, 60 * 60000)) return res.status(429).json({ error: "Trop de messages. Réessaie plus tard." });
   const active = db.prepare(`SELECT 1 FROM keys WHERE discord_id=? AND revoked=0
     AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`).get(ss.id);
   const flag = db.prepare("SELECT enabled FROM flags WHERE name='ai_chat'").get()?.enabled === 1;
@@ -458,13 +490,14 @@ app.get("/admin/login", (req, res) => {
 });
 // Login par mot de passe -> session admin "local" (compare en temps constant).
 app.post("/admin/auth", (req, res) => {
+  if (!rateLimit("login:" + req.ip, 8, 15 * 60000)) { log("admin_login_throttle", { ip: req.ip }); return res.status(429).send("Trop de tentatives. Réessaie dans 15 minutes."); }
   const real = process.env.ADMIN_PASSWORD ?? "";
   const pw = String(req.body.password ?? "");
   const h = (s) => crypto.createHash("sha256").update(s).digest();
   const ok = real.length > 0 && crypto.timingSafeEqual(h(pw), h(real));
   if (!ok) { log("admin_login_fail", { ip: req.ip }); return res.redirect("/admin/login?e=1"); }
   const sess = makeSession({ kind: "admin", id: "local", name: "admin" }, 12 * 3600000);
-  res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`);
+  res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${COOKIE_SEC}`);
   res.redirect("/panel");
 });
 // Déconnexion admin : efface le cookie.
@@ -477,7 +510,7 @@ app.get("/admin/callback", async (req, res) => {
     const u = await discordExchange(req.query.code, `${PUBLIC_URL}/admin/callback`);
     if (!ADMIN_IDS.includes(u.id)) return res.status(403).send("Acces refuse : compte non admin.");
     const sess = makeSession({ kind: "admin", id: u.id, name: u.username }, 12 * 3600000);
-    res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`);
+    res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${COOKIE_SEC}`);
     res.redirect("/panel");
   } catch (e) { console.error(e); res.status(500).send("Erreur OAuth admin"); }
 });

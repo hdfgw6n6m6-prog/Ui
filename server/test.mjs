@@ -117,6 +117,14 @@ async function run() {
   ok((await (await jget("/admin/api/user?discord_id=111", cookie)).json()).user.email === null, "email effacé");
   ok((await (await jpost("/admin/api/broadcast", { message: "Coucou", channel: "app" }, cookie)).json()).count >= 1, "broadcast in-app");
 
+  console.log("=== SÉCURITÉ ===");
+  const hr = await jget("/admin/api/stats", cookie);
+  ok(hr.headers.get("x-content-type-options") === "nosniff" && !!hr.headers.get("content-security-policy") && !hr.headers.get("x-powered-by"), "en-têtes de sécurité (CSP, nosniff, pas de x-powered-by)");
+  let got429 = false;
+  const rl = appSession("rl-test", "RL");
+  for (let i = 0; i < 14; i++) { if ((await jpost("/v1/redeem", { session: rl, key: "PB-0000-0000-0000-0000" })).status === 429) { got429 = true; break; } }
+  ok(got429, "rate-limit anti-abus -> 429");
+
   console.log("=== SAUVEGARDE ===");
   const bkp = await jget("/admin/api/backup", cookie);
   ok(bkp.status === 200 && (await bkp.text()).startsWith("SQLite format 3"), "sauvegarde téléchargeable (.db valide)");
