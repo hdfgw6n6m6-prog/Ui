@@ -127,6 +127,33 @@
     h3{display:none}.brand{padding:0 10px 0 0}.nav span{display:none}.nav{width:auto}.rail-foot{display:none}
     .grid2{grid-template-columns:1fr}.search{display:none}
   }
+
+  /* ---- ANIMATIONS PREMIUM ---- */
+  body::before{content:"";position:fixed;inset:-25%;z-index:-1;pointer-events:none;
+    background:radial-gradient(38% 38% at 16% 20%,rgba(139,92,246,.22),transparent 62%),
+      radial-gradient(34% 34% at 84% 26%,rgba(34,211,238,.16),transparent 62%),
+      radial-gradient(40% 40% at 60% 84%,rgba(236,72,153,.12),transparent 62%);
+    filter:blur(48px);animation:aurora 26s ease-in-out infinite alternate}
+  @keyframes aurora{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(2.5%,-2%,0) scale(1.1)}100%{transform:translate3d(-2%,1.5%,0) scale(1.04)}}
+  section.enter>*{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
+  section.enter>*:nth-child(1){animation-delay:.02s}
+  section.enter>*:nth-child(2){animation-delay:.09s}
+  section.enter>*:nth-child(3){animation-delay:.16s}
+  section.enter>*:nth-child(n+4){animation-delay:.22s}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .card{transition:transform .3s cubic-bezier(.22,1,.36,1),box-shadow .3s,border-color .3s}
+  .card:hover{transform:translateY(-2px);border-color:rgba(139,92,246,.28);box-shadow:0 24px 64px rgba(0,0,0,.5)}
+  .kpi{transition:transform .25s,box-shadow .25s}.kpi:hover{transform:translateY(-3px);box-shadow:0 18px 44px rgba(0,0,0,.45)}
+  .nav{transition:background .15s,color .15s,transform .12s}.nav:hover{transform:translateX(3px)}
+  .btn{transition:background .14s,transform .08s,box-shadow .2s}
+  .btn.primary{position:relative;overflow:hidden}
+  .btn.primary::after{content:"";position:absolute;top:0;left:-130%;width:55%;height:100%;background:linear-gradient(120deg,transparent,rgba(255,255,255,.4),transparent);transform:skewX(-20deg);pointer-events:none}
+  .btn.primary:hover::after{animation:shine .85s ease}
+  @keyframes shine{from{left:-130%}to{left:150%}}
+  tbody tr{animation:rowin .35s ease both}@keyframes rowin{from{opacity:0}to{opacity:1}}
+  .toast{animation:tin .4s cubic-bezier(.22,1,.36,1)}@keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(14px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  .modal-card{animation:min .35s cubic-bezier(.22,1,.36,1)}@keyframes min{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.card:hover,.kpi:hover,.nav:hover{transform:none!important}}
 </style>
 </head>
 <body>
@@ -331,6 +358,7 @@ document.querySelectorAll(".nav").forEach((n)=>n.addEventListener("click",()=>{
   const tab=n.dataset.tab;
   document.querySelectorAll(".nav").forEach((x)=>x.classList.toggle("on",x===n));
   Object.keys(TABS).forEach((t)=>$(t).classList.toggle("hide",t!==tab));
+  const sec=$(tab);sec.classList.remove("enter");void sec.offsetWidth;sec.classList.add("enter"); // rejoue l'animation d'entrée
   const[ti,su,ld]=TABS[tab];$("ptitle").textContent=ti;$("psub").textContent=su;$("search").value="";applySearch();
   if(ld)ld();
 }));
@@ -435,6 +463,7 @@ $("b-backup").addEventListener("click",()=>{location.href="/admin/api/backup";})
 
 // SSE temps réel
 try{const es=new EventSource("/admin/api/alerts/stream");es.onmessage=()=>{loadAlerts();loadStats();const l=document.querySelector(".live i");if(l){l.style.opacity=.3;setTimeout(()=>l.style.opacity=1,300);}};}catch(e){}
+$("dash").classList.add("enter");
 loadStats();loadAlerts();setInterval(loadStats,30000);
 </script>
 </body>

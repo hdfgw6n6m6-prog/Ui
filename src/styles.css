@@ -374,3 +374,102 @@ nav { display: grid; gap: 3px; }
   .grid-2 { grid-template-columns: 1fr; }
   .monitor { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   ANIMATIONS PREMIUM — entrée, micro-interactions, aurora.
+   (toutes neutralisées si prefers-reduced-motion)
+   ============================================================ */
+
+/* Aurora animée derrière toute l'app */
+body::before {
+  content: ""; position: fixed; inset: -25%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(38% 38% at 18% 22%, rgba(139,92,246,.22), transparent 62%),
+    radial-gradient(34% 34% at 82% 28%, rgba(34,211,238,.16), transparent 62%),
+    radial-gradient(40% 40% at 60% 82%, rgba(236,72,153,.12), transparent 62%);
+  filter: blur(46px); opacity: .9;
+  animation: aurora 24s ease-in-out infinite alternate;
+}
+@keyframes aurora {
+  0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); }
+  50%  { transform: translate3d(2.5%,-2%,0) scale(1.1) rotate(4deg); }
+  100% { transform: translate3d(-2%,1.5%,0) scale(1.05) rotate(-3deg); }
+}
+
+/* Entrée du contenu d'onglet, en cascade */
+.tab-view { animation: fadeSwap .42s ease; }
+@keyframes fadeSwap { from { opacity: 0; } to { opacity: 1; } }
+.tab-view > * { animation: rise .55s cubic-bezier(.22,1,.36,1) both; }
+.tab-view > *:nth-child(1) { animation-delay: .02s; }
+.tab-view > *:nth-child(2) { animation-delay: .09s; }
+.tab-view > *:nth-child(3) { animation-delay: .16s; }
+.tab-view > *:nth-child(4) { animation-delay: .23s; }
+.tab-view > *:nth-child(5) { animation-delay: .30s; }
+.tab-view > *:nth-child(n+6) { animation-delay: .36s; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+/* Cartes : léger soulèvement au survol */
+.card { transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s, border-color .3s; will-change: transform; }
+.card:hover { transform: translateY(-2px); border-color: rgba(139,92,246,.28); box-shadow: 0 24px 64px rgba(0,0,0,.5); }
+
+/* Boutons : transitions + reflet qui balaye le bouton principal */
+.btn { transition: background .15s, transform .08s, box-shadow .25s, filter .15s; }
+.btn.primary, .btn.pro-cta { position: relative; overflow: hidden; }
+.btn.primary::after, .btn.pro-cta::after {
+  content: ""; position: absolute; top: 0; left: -130%; width: 55%; height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255,255,255,.4), transparent);
+  transform: skewX(-20deg); pointer-events: none;
+}
+.btn.primary:hover:not(:disabled)::after, .btn.pro-cta:hover:not(:disabled)::after { animation: shine .85s ease; }
+@keyframes shine { from { left: -130%; } to { left: 150%; } }
+.btn.lg:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(139,92,246,.45); }
+
+/* Éléments de liste interactifs : soulèvement + glow */
+.game, .tweak label, .metric, .measure-cell, .reco li, .ptag, .chip {
+  transition: transform .2s cubic-bezier(.22,1,.36,1), border-color .2s, background .2s, box-shadow .2s;
+}
+.game:hover, .tweak label:hover, .reco li:hover { transform: translateY(-2px); }
+.game:hover { box-shadow: 0 10px 26px rgba(0,0,0,.35); }
+
+/* Navigation : glisse au survol, indicateur actif animé */
+.nav { transition: background .16s, color .16s, transform .12s, box-shadow .16s; }
+.nav:hover { transform: translateX(3px); }
+.nav.on { animation: navPop .35s cubic-bezier(.22,1,.36,1); }
+@keyframes navPop { from { transform: scale(.97); } to { transform: scale(1); } }
+
+/* Bandeau de confiance : reflet doux récurrent */
+.trust { position: relative; overflow: hidden; }
+.trust::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.06) 50%, transparent 70%);
+  transform: translateX(-100%); animation: sweep 6s ease-in-out 2s infinite;
+}
+@keyframes sweep { 0%,100% { transform: translateX(-100%); } 55% { transform: translateX(100%); } }
+
+/* Toast : entrée fluide */
+.toast { animation: toastIn .42s cubic-bezier(.22,1,.36,1); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(16px) scale(.96); } to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+
+/* Spinner & pastille live : déjà animés ; halo des stats live */
+.chip-stat b { transition: color .3s; }
+.gauge svg { filter: drop-shadow(0 0 14px rgba(139,92,246,.25)); }
+
+/* Squelette de chargement (shimmer) */
+.skeleton { position: relative; overflow: hidden; background: rgba(255,255,255,.04); border-radius: 8px; min-height: 14px; }
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.09), transparent);
+  transform: translateX(-100%); animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%); } }
+
+/* Apparition de la modale (churn) */
+.modal-box { animation: modalIn .35s cubic-bezier(.22,1,.36,1); }
+@keyframes modalIn { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+
+/* Accessibilité : tout couper si l'utilisateur le demande */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .card:hover, .nav:hover, .game:hover, .tweak label:hover, .reco li:hover, .btn.lg:hover { transform: none !important; }
+  body::before { animation: none !important; }
+}

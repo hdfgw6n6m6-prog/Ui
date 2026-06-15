@@ -424,6 +424,7 @@ export default function App() {
               <button className="btn sm" onClick={updateNow}>Mettre à jour</button>
             </div>
           )}
+          <div className="tab-view" key={tab}>
           {tab === "pulse" && (
             <>
               <div className="card hero">
@@ -661,6 +662,7 @@ export default function App() {
               </div>
             </>
           )}
+          </div>
         </div>
       </main>
 
