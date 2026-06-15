@@ -190,11 +190,32 @@ app.post("/v1/redeem", (req, res) => {
   if (!s || s.kind !== "app") return res.status(401).json({ error: "session invalide" });
   const key = normKey(req.body.key);
   const row = db.prepare("SELECT * FROM keys WHERE key=?").get(key);
-  if (!row || row.revoked) { log("redeem_fail", { discord_id: s.id, detail: key }); return res.status(403).json({ error: "cle invalide ou revoquee" }); }
+  if (!row || row.revoked) { log("redeem_fail", { discord_id: s.id, detail: key }); return res.status(403).json({ error: "Clé invalide ou révoquée." }); }
+
+  // Clé déjà liée à un AUTRE compte -> refus (anti-partage).
   if (row.discord_id && row.discord_id !== s.id) {
     alert("warn", `Cle ${key} deja liee a un autre compte - tentative par ${s.name}`, s.id);
-    return res.status(403).json({ error: "cle deja utilisee par un autre compte" });
+    return res.status(403).json({ error: "Clé déjà utilisée par un autre compte." });
   }
+
+  const stillActive = (r) => r && !r.revoked && (!r.expires_at || new Date(r.expires_at) > new Date());
+
+  // Clé déjà liée à CE compte : soit déjà active (no-op), soit expirée (dépensée).
+  if (row.discord_id === s.id) {
+    if (stillActive(row)) return res.json({ ok: true, plan: row.plan, expires_at: row.expires_at, already: true, message: "Cette clé est déjà active sur ton compte." });
+    return res.status(409).json({ error: "Cette clé a déjà été utilisée et a expiré." });
+  }
+
+  // RÈGLE : une seule clé active par compte -> interdit d'en activer une 2e.
+  const active = db.prepare(`SELECT plan, expires_at FROM keys WHERE discord_id=? AND revoked=0
+    AND (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY expires_at DESC LIMIT 1`).get(s.id);
+  if (active) {
+    log("redeem_blocked", { discord_id: s.id, detail: `${key} (déjà ${active.plan} actif)` });
+    const fin = active.expires_at ? new Date(active.expires_at).toLocaleDateString("fr-FR") : "—";
+    return res.status(409).json({ error: `Tu as déjà une clé active (${active.plan}, jusqu'au ${fin}). Tu pourras en activer une nouvelle à son expiration.`, code: "active_subscription", expires_at: active.expires_at });
+  }
+
+  // OK : lier + activer la clé neuve.
   const expires = row.days === 0 ? "2099-01-01T00:00:00Z" : new Date(Date.now() + row.days * 86400000).toISOString();
   db.prepare("UPDATE keys SET discord_id=?, redeemed_at=COALESCE(redeemed_at,datetime('now')), expires_at=? WHERE key=?").run(s.id, expires, key);
   log("redeem", { discord_id: s.id, detail: `${key} (${row.plan})` });

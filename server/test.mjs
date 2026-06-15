@@ -71,6 +71,8 @@ async function run() {
   const freeKey = gen.keys[1];
   ok((await (await jpost("/v1/redeem", { session: sess, key: freeKey })).json()).ok === true, "redeem");
   ok((await jpost("/v1/redeem", { session: appSession("222", "Autre"), key: freeKey })).status === 403, "anti-partage de clé");
+  ok((await jpost("/v1/redeem", { session: sess, key: gen.keys[0] })).status === 409, "2e clé refusée (un seul abo actif)");
+  ok((await (await jpost("/v1/redeem", { session: sess, key: freeKey })).json()).already === true, "re-redeem même clé = déjà active");
   const ent = await (await jpost("/v1/entitlement", { session: sess, hwid: "hw111" })).json();
   ok(ent.pro === true && typeof ent.token === "string" && ent.token.includes("."), "entitlement pro + token signé");
   ok((await (await jpost("/v1/telemetry", { session: sess, hwid: "hw111", events: [{ type: "scan" }], snapshot: { score: 80, hw: { cpu: { name: "X" } } } })).json()).ok === true, "telemetry");
