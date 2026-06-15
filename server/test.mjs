@@ -26,8 +26,13 @@ const jget = (p, c) => fetch(BASE + p, { headers: c ? { Cookie: c } : {} });
 
 const env = { ...process.env, SESSION_SECRET: SS, ADMIN_PASSWORD: "adminpw", PORT: String(PORT), DATA_DIR, LICENSE_PRIVATE_KEY: PRIV, DISCORD_BOT_TOKEN: "", GEMINI_API_KEY: "" };
 fs.rmSync(DATA_DIR, { recursive: true, force: true });
-const srv = spawn("node", ["server.js"], { cwd: __dirname, env });
+let srv = spawn("node", ["server.js"], { cwd: __dirname, env });
 srv.stderr.on("data", (d) => process.stderr.write(d));
+const login = async () => {
+  const a = await fetch(BASE + "/admin/auth", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "password=adminpw", redirect: "manual" });
+  return (a.headers.get("set-cookie") || "").split(";")[0];
+};
+const waitReady = () => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("démarrage long")), 10000); const h = (d) => { if (String(d).includes("server pret")) { clearTimeout(t); srv.stdout.off("data", h); res(); } }; srv.stdout.on("data", h); });
 
 async function run() {
   console.log("=== ADMIN (mot de passe) ===");
@@ -112,9 +117,26 @@ async function run() {
   ok((await (await jget("/admin/api/user?discord_id=111", cookie)).json()).user.email === null, "email effacé");
   ok((await (await jpost("/admin/api/broadcast", { message: "Coucou", channel: "app" }, cookie)).json()).count >= 1, "broadcast in-app");
 
+  console.log("=== SAUVEGARDE ===");
+  const bkp = await jget("/admin/api/backup", cookie);
+  ok(bkp.status === 200 && (await bkp.text()).startsWith("SQLite format 3"), "sauvegarde téléchargeable (.db valide)");
+
   console.log("=== IA sans clé Gemini (échec propre) ===");
   ok([502, 403].includes((await jpost("/v1/analyze", { session: sess, hwid: "hw111", scan: { cpu: {} }, locale: "fr" })).status), "analyze -> 502/403");
   ok([502, 403].includes((await jpost("/v1/chat", { session: sess, hwid: "hw111", messages: [{ role: "user", content: "hi" }] })).status), "chat -> 502/403");
+}
+
+// Test de PERSISTANCE : on redémarre le serveur sur la MÊME base et on vérifie.
+async function persistenceTest() {
+  console.log("=== PERSISTANCE (redémarrage serveur) ===");
+  const before = (await (await jget("/admin/api/keys", await login())).json()).length;
+  srv.kill("SIGTERM");
+  await new Promise((r) => setTimeout(r, 1200));
+  srv = spawn("node", ["server.js"], { cwd: __dirname, env });
+  srv.stderr.on("data", (d) => process.stderr.write(d));
+  await waitReady();
+  const after = (await (await jget("/admin/api/keys", await login())).json()).length;
+  ok(after > 0 && after === before, `données conservées après redémarrage (${before} clés, idem après)`);
 }
 
 // Attendre que le serveur soit prêt, lancer, nettoyer.
@@ -125,6 +147,7 @@ const ready = new Promise((res, rej) => {
 try {
   await ready;
   await run();
+  await persistenceTest();
   console.log(`\n=== RÉSULTAT : ${pass} OK, ${fail} échec(s) ===`);
 } catch (e) {
   console.error("ERREUR test:", e.message); fail++;

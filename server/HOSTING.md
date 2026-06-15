@@ -36,9 +36,14 @@ La plupart des hébergeurs Node (type "bot hosting") fonctionnent ainsi :
 4. **Configuration** : édite **`config.js`** (valeurs Discord, Gemini, secrets…).
    Sur un dépôt PUBLIC, laisse les secrets vides dans `config.js` et mets-les
    plutôt dans les variables d'environnement de l'hébergeur (elles sont prioritaires).
-5. **Disque persistant** : crée un volume persistant et pointe `DATA_DIR` dessus
-   (ex. `/data`). ⚠️ Sans ça, la base SQLite (clés, comptes) est **remise à zéro**
-   à chaque redéploiement sur les hébergeurs au filesystem éphémère.
+5. **Disque persistant (IMPORTANT pour TOUT sauvegarder)** : crée un volume
+   persistant et pointe `DATA_DIR` dessus (ex. `/data`). Toutes les données (comptes,
+   clés, logs, blacklist, réglages…) sont dans `DATA_DIR/pulseboost.db` et **survivent
+   au redémarrage** tant que ce dossier persiste. Le serveur fait un checkpoint chaque
+   minute, un **arrêt propre** (SIGTERM) et des **sauvegardes auto toutes les 6h** dans
+   `DATA_DIR/backups/` (12 dernières). ⚠️ Si `DATA_DIR` n'est PAS persistant, tout est
+   **remis à zéro** à chaque redéploiement — c'est le seul vrai risque de perte.
+   Pense aussi à **télécharger une sauvegarde** depuis le panel (Réglages) pour la garder hors-hébergeur.
 6. **Port** : l'hébergeur fournit en général `PORT` automatiquement ; le serveur
    le lit (`process.env.PORT`). Sinon mets `PORT=8787`.
 7. **URL publique / HTTPS** : utilise l'URL HTTPS fournie par l'hébergeur comme

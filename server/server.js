@@ -600,6 +600,15 @@ app.post("/admin/api/settings", admin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Télécharger une sauvegarde complète de la base (copie cohérente).
+app.get("/admin/api/backup", admin, async (req, res) => {
+  const tmp = path.join(DATA_DIR, `dl-${Date.now()}.db`);
+  try {
+    await db.backup(tmp);
+    res.download(tmp, `pulseboost-${new Date().toISOString().slice(0, 10)}.db`, () => { try { fs.unlinkSync(tmp); } catch {} });
+  } catch (e) { console.error("[backup dl]", e.message); res.status(500).json({ error: "sauvegarde impossible" }); }
+});
+
 // Offrir Pro (cadeau) — crée une clé déjà liée + active
 app.post("/admin/api/grant", admin, (req, res) => {
   const { discord_id, plan = "monthly" } = req.body ?? {};
@@ -740,6 +749,40 @@ app.get("/panel", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "panel.html"));
 });
 app.get("/", (req, res) => res.redirect("/admin/login"));
+
+// --- PERSISTANCE & SAUVEGARDES ---
+// Tout est en SQLite (DATA_DIR/pulseboost.db). Ces garde-fous garantissent que
+// rien n'est perdu au redémarrage, même brutal.
+const BACKUP_DIR = path.join(DATA_DIR, "backups");
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+// 1) Checkpoint périodique : fusionne le WAL dans le fichier .db principal
+//    (au cas où l'hébergeur ne conserverait que pulseboost.db et pas le -wal).
+setInterval(() => { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} }, 60 * 1000);
+
+// 2) Sauvegarde automatique de la base, rotation des 12 plus récentes.
+async function backupNow(tag = "auto") {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const dest = path.join(BACKUP_DIR, `pulseboost-${stamp}-${tag}.db`);
+    await db.backup(dest);
+    const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".db")).sort();
+    for (const old of files.slice(0, -12)) { try { fs.unlinkSync(path.join(BACKUP_DIR, old)); } catch {} }
+    return dest;
+  } catch (e) { console.error("[backup]", e.message); return null; }
+}
+setInterval(() => backupNow("auto"), 6 * 60 * 60 * 1000); // toutes les 6h
+backupNow("boot"); // une sauvegarde au démarrage
+
+// 3) Arrêt propre : checkpoint + fermeture -> aucune écriture perdue au redémarrage.
+let closing = false;
+function shutdown() {
+  if (closing) return; closing = true;
+  try { db.pragma("wal_checkpoint(TRUNCATE)"); db.close(); } catch {}
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 // Écoute sur 0.0.0.0 (toutes interfaces) — requis par le Proxy Manager de l'hébergeur.
 app.listen(process.env.PORT ?? 8787, "0.0.0.0", () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));

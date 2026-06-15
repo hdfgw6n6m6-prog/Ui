@@ -291,6 +291,10 @@
           <textarea id="bc-msg" rows="2" style="width:100%;resize:vertical" placeholder="Ton message…"></textarea>
           <div class="row" style="margin-top:10px"><button class="btn" id="b-bcapp">Envoyer in-app à tous</button><button class="btn" id="b-bcdm">Envoyer en DM à tous</button></div>
         </div>
+        <div class="card"><h2>Sauvegarde de la base</h2>
+          <p class="muted tiny" style="margin:6px 0 10px">Tout est enregistré en SQLite et conservé au redémarrage. Des sauvegardes automatiques sont faites toutes les 6h (les 12 dernières). Télécharge une copie pour la garder à l'abri.</p>
+          <button class="btn primary" id="b-backup">Télécharger une sauvegarde (.db)</button>
+        </div>
       </section>
     </div>
   </main>
@@ -427,6 +431,7 @@ $("b-logs").addEventListener("click",loadLogs);
 $("b-savesettings").addEventListener("click",saveSettings);
 $("b-bcapp").addEventListener("click",()=>broadcast("app"));
 $("b-bcdm").addEventListener("click",()=>broadcast("dm"));
+$("b-backup").addEventListener("click",()=>{location.href="/admin/api/backup";});
 
 // SSE temps réel
 try{const es=new EventSource("/admin/api/alerts/stream");es.onmessage=()=>{loadAlerts();loadStats();const l=document.querySelector(".live i");if(l){l.style.opacity=.3;setTimeout(()=>l.style.opacity=1,300);}};}catch(e){}
