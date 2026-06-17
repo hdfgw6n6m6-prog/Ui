@@ -117,6 +117,24 @@ async function run() {
   ok((await (await jget("/admin/api/user?discord_id=111", cookie)).json()).user.email === null, "email effacé");
   ok((await (await jpost("/admin/api/broadcast", { message: "Coucou", channel: "app" }, cookie)).json()).count >= 1, "broadcast in-app");
 
+  console.log("=== TICKETS (support DM) ===");
+  // Simule un message reçu par le bot (que le listener gateway aurait inséré).
+  const tdb = new Database(path.join(DATA_DIR, "pulseboost.db"));
+  const ti = tdb.prepare("INSERT INTO tickets (discord_id,username,status) VALUES (?,?,?)").run("111", "Tester", "open").lastInsertRowid;
+  tdb.prepare("INSERT INTO ticket_messages (ticket_id,author,content,discord_message_id) VALUES (?,?,?,?)").run(ti, "user", "j'ai un souci", "msg1");
+  tdb.prepare("INSERT INTO ticket_messages (ticket_id,author,content,discord_message_id,deleted) VALUES (?,?,?,?,1)").run(ti, "user", "message supprimé", "msg2");
+  tdb.close();
+  const tlist = await (await jget("/admin/api/tickets", cookie)).json();
+  ok(Array.isArray(tlist) && tlist.some((t) => t.id === ti && t.unread >= 1), "tickets listés + non-lus comptés");
+  const tdet = await (await jget("/admin/api/ticket?id=" + ti, cookie)).json();
+  ok(tdet.ticket && tdet.messages.length === 2, "détail du ticket (2 messages)");
+  ok(tdet.messages.some((m) => m.deleted === 1 && m.content === "message supprimé"), "message supprimé conservé et visible");
+  const trep = await (await jpost("/admin/api/ticket/reply", { id: ti, message: "on regarde ça !" }, cookie)).json();
+  ok(trep.ok === true, "réponse admin enregistrée (DM)");
+  const tdet2 = await (await jget("/admin/api/ticket?id=" + ti, cookie)).json();
+  ok(tdet2.ticket.status === "answered" && tdet2.messages.length === 3, "ticket -> répondu, message admin ajouté");
+  ok((await (await jpost("/admin/api/ticket/close", { id: ti }, cookie)).json()).ok === true, "fermeture du ticket");
+
   console.log("=== SÉCURITÉ ===");
   const hr = await jget("/admin/api/stats", cookie);
   ok(hr.headers.get("x-content-type-options") === "nosniff" && !!hr.headers.get("content-security-policy") && !hr.headers.get("x-powered-by"), "en-têtes de sécurité (CSP, nosniff, pas de x-powered-by)");

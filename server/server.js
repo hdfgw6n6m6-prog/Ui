@@ -21,6 +21,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as discord from "./discord.js";
+import { startTickets } from "./tickets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -104,6 +105,17 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS snapshots (discord_id TEXT PRIMARY KEY, hwid TEXT, score INTEGER, hw TEXT, last_seen TEXT DEFAULT (datetime('now')));
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
   CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT);
+  CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, username TEXT,
+    status TEXT DEFAULT 'open', created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')), last_read_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS ticket_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id INTEGER, author TEXT,
+    content TEXT, discord_message_id TEXT, deleted INTEGER DEFAULT 0,
+    edited INTEGER DEFAULT 0, original_content TEXT, created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmsg_ticket ON ticket_messages(ticket_id);
 `);
 // Migration idempotente : colonnes email (collectées via OAuth scope `email`).
 for (const col of ["email TEXT", "email_verified INTEGER"]) {
@@ -642,6 +654,40 @@ app.get("/admin/api/backup", admin, async (req, res) => {
   } catch (e) { console.error("[backup dl]", e.message); res.status(500).json({ error: "sauvegarde impossible" }); }
 });
 
+// --- TICKETS (support par MP) ---
+app.get("/admin/api/tickets", admin, (req, res) => res.json(db.prepare(`
+  SELECT t.*, u.avatar, u.email,
+    (SELECT plan FROM keys k WHERE k.discord_id=t.discord_id AND k.revoked=0 AND (k.expires_at IS NULL OR k.expires_at>datetime('now')) ORDER BY k.expires_at DESC LIMIT 1) AS plan,
+    (SELECT content FROM ticket_messages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+    (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id=t.id) AS msg_count,
+    (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id=t.id AND m.author='user' AND (t.last_read_at IS NULL OR m.created_at > t.last_read_at)) AS unread
+  FROM tickets t LEFT JOIN users u ON u.discord_id=t.discord_id ORDER BY t.updated_at DESC LIMIT 500`).all()));
+
+app.get("/admin/api/ticket", admin, (req, res) => {
+  const t = db.prepare("SELECT * FROM tickets WHERE id=?").get(req.query.id);
+  if (!t) return res.status(404).json({ error: "introuvable" });
+  const messages = db.prepare("SELECT id,author,content,deleted,edited,original_content,created_at FROM ticket_messages WHERE ticket_id=? ORDER BY id").all(t.id);
+  db.prepare("UPDATE tickets SET last_read_at=datetime('now') WHERE id=?").run(t.id); // marquer lu
+  res.json({ ticket: t, messages });
+});
+
+app.post("/admin/api/ticket/reply", admin, async (req, res) => {
+  const { id, message } = req.body ?? {};
+  const t = db.prepare("SELECT * FROM tickets WHERE id=?").get(id);
+  if (!t || !message) return res.status(400).json({ error: "ticket ou message manquant" });
+  const r = await discord.safe(() => discord.dmUser(t.discord_id, `💬 **Support PulseBoost** :\n${message}`));
+  db.prepare("INSERT INTO ticket_messages (ticket_id,author,content,discord_message_id) VALUES (?,?,?,?)").run(id, "admin", message, r?.id ?? null);
+  db.prepare("UPDATE tickets SET status='answered', updated_at=datetime('now'), last_read_at=datetime('now') WHERE id=?").run(id);
+  log("ticket_reply", { discord_id: req.admin.id, detail: `#${id} -> ${t.discord_id}` });
+  res.json({ ok: true, sent: r !== null });
+});
+
+app.post("/admin/api/ticket/close", admin, (req, res) => {
+  const { id, reopen } = req.body ?? {};
+  db.prepare("UPDATE tickets SET status=?, updated_at=datetime('now') WHERE id=?").run(reopen ? "open" : "closed", id);
+  res.json({ ok: true });
+});
+
 // Offrir Pro (cadeau) — crée une clé déjà liée + active
 app.post("/admin/api/grant", admin, (req, res) => {
   const { discord_id, plan = "monthly" } = req.body ?? {};
@@ -819,3 +865,6 @@ process.on("SIGINT", shutdown);
 
 // Écoute sur 0.0.0.0 (toutes interfaces) — requis par le Proxy Manager de l'hébergeur.
 app.listen(process.env.PORT ?? 8787, "0.0.0.0", () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
+
+// Support par MP (DM) : le bot écoute les messages privés -> tickets (lecture seule, aucune commande).
+startTickets({ db, discord, alert, log });

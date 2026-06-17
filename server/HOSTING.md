@@ -7,10 +7,12 @@ seule chose à héberger** : ce dossier `server/`.
 > Configuration : tout se règle dans **`config.js`** (pas de `.env`). Les variables
 > d'environnement, si tu en définis, restent prioritaires sur `config.js`.
 >
-> L'effecteur Discord est **REST pur** : pas de gateway, **aucune commande Discord**.
-> Il est piloté **uniquement** par le panel web. Pour afficher la liste des membres
-> dans le panel, active l'intent **« Server Members »** (portail → Bot → Privileged
-> Intents).
+> Discord : **aucune commande slash**. Le bot agit en REST (DM, rôle, logs) piloté
+> par le panel, et se connecte au gateway **uniquement** pour le **support par MP**
+> (lecture des DM → tickets). Active les **Privileged Intents** dans le portail
+> (Bot → Privileged Gateway Intents) :
+> - **Server Members Intent** → liste des membres dans le panel.
+> - **Message Content Intent** → tickets de support par MP (lire le contenu des DM).
 
 ---
 

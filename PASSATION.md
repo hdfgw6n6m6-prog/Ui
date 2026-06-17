@@ -205,6 +205,19 @@ npm run tauri build      # installeur NSIS dans src-tauri/target/release/bundle
 > des clés via panel/bot.)
 
 
+> Ajouts récents v7 (FAIT) : **Système de tickets de support par MP**
+> (`server/tickets.js`, dép. `ws`). Le bot se connecte au gateway UNIQUEMENT pour
+> lire les **DM** (intents DIRECT_MESSAGES + MESSAGE_CONTENT — toujours AUCUNE
+> commande). Un DM ouvre un ticket + embed d'accueil ; **chaque message est
+> sauvegardé**, y compris **supprimés/édités** (flags `deleted`/`edited` +
+> `original_content`). L'admin lit/répond depuis le panel (onglet **Tickets** :
+> conversation, badge de non-lus, fermer/rouvrir ; la réponse part en DM).
+> Endpoints `/admin/api/tickets`, `/admin/api/ticket`, `.../ticket/reply`,
+> `.../ticket/close`. ⚠️ requiert l'intent privilégié **« Message Content »**.
+> Sécurité (en-têtes CSP/HSTS, rate-limit, cookies Secure) et **persistance**
+> (checkpoints, arrêt propre, sauvegardes auto + téléchargeables) ajoutées aussi.
+> Animations premium app + panel. Système de clés : **1 seule clé active/compte**.
+>
 > Ajouts récents v6 (FAIT) : **bot 100% REST (zéro commande Discord)** — le bot
 > gateway/slash a été retiré ; le bot reste un **effecteur** piloté UNIQUEMENT par
 > le panel (DM, rôle, logs, **liste des membres** `discord.listMembers`). **Panel

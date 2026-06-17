@@ -128,6 +128,17 @@
     .grid2{grid-template-columns:1fr}.search{display:none}
   }
 
+  /* ---- Tickets / conversation ---- */
+  .convo{display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow:auto;padding:6px 2px;margin:10px 0}
+  .msg{max-width:78%;padding:9px 13px;border-radius:14px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .msg .who{font-size:10px;text-transform:uppercase;letter-spacing:.06em;opacity:.7;margin-bottom:3px}
+  .msg.user{align-self:flex-start;background:var(--panel-2);border:1px solid var(--line-2);border-bottom-left-radius:5px}
+  .msg.admin{align-self:flex-end;background:linear-gradient(120deg,rgba(139,92,246,.9),#7c3aed);border-bottom-right-radius:5px}
+  .msg.del{opacity:.6}.msg.del .body{text-decoration:line-through}
+  .msg .meta{font-size:10px;opacity:.6;margin-top:4px}
+  .reply{display:flex;gap:9px;margin-top:6px}
+  .reply textarea{flex:1;min-height:46px;resize:vertical}
+
   /* ---- ANIMATIONS PREMIUM ---- */
   body::before{content:"";position:fixed;inset:-25%;z-index:-1;pointer-events:none;
     background:radial-gradient(38% 38% at 16% 20%,rgba(139,92,246,.22),transparent 62%),
@@ -168,6 +179,8 @@
     <button class="nav" data-tab="keys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 20 3l1 1-2 2 1 1-2 2-1-1-2 2"/></svg><span>Clés</span></button>
     <button class="nav" data-tab="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg><span>Utilisateurs app</span></button>
     <button class="nav" data-tab="members"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Membres Discord</span></button>
+    <h3>Support</h3>
+    <button class="nav" data-tab="tickets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.1A8.4 8.4 0 1 1 21 11.5z"/></svg><span>Tickets</span></button>
     <h3>Sécurité</h3>
     <button class="nav" data-tab="blacklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span>Blacklist</span></button>
     <button class="nav" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg><span>Logs</span></button>
@@ -282,6 +295,21 @@
         </div>
       </section>
 
+      <!-- TICKETS -->
+      <section id="tickets" class="hide">
+        <div class="card"><div class="card-h"><h2>Tickets de support <span class="pill muted" id="tk-count">—</span></h2>
+          <div class="row" style="margin:0"><button class="btn sm" id="b-tkrefresh">Rafraîchir</button></div></div>
+          <div class="row" id="tk-filters" style="margin:4px 0 8px">
+            <button class="chip on" data-f="open">Ouverts</button>
+            <button class="chip" data-f="all">Tous</button>
+            <button class="chip" data-f="answered">Répondus</button>
+            <button class="chip" data-f="closed">Fermés</button>
+          </div>
+          <p class="muted tiny" id="tk-note" style="margin-bottom:6px"></p>
+          <div class="tscroll"><table><thead><tr><th>Utilisateur</th><th>Statut</th><th>Dernier message</th><th>Msgs</th><th>Maj</th><th></th></tr></thead><tbody id="tk-rows"></tbody></table></div>
+        </div>
+      </section>
+
       <!-- BLACKLIST -->
       <section id="blacklist" class="hide">
         <div class="card"><h2>Blacklist anti-crack</h2>
@@ -348,6 +376,7 @@ const TABS={
   keys:["Clés","Génération et gestion des licences",loadKeys],
   users:["Utilisateurs app","Comptes ayant utilisé l'application",loadUsers],
   members:["Membres Discord","Tous les membres de ton serveur",loadMembers],
+  tickets:["Tickets","Support par message privé (DM)",loadTickets],
   blacklist:["Blacklist","Postes (HWID) bloqués",loadBl],
   logs:["Logs","Journal complet des évènements",loadLogs],
   flags:["Features","Modules et portée gratuit/Pro",loadFlags],
@@ -424,6 +453,26 @@ function renderMembers(){let m=MEMBERS;if(M_FILTER==="registered")m=m.filter(x=>
     return `<tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(x.id,x.avatar,32)}" width="24" height="24" onerror="${onerr}"/><span>${esc(x.nick||x.username)}${x.email?`<br><span class="mono muted tiny">${esc(x.email)}</span>`:""}</span></span></td><td class="mono">${esc(x.id)}</td><td>${dday(x.joined_at)}</td><td>${tags}</td><td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn sm" onclick="dm('${x.id}')">DM</button><button class="btn sm" onclick="grant('${x.id}')">offrir Pro</button>${x.has_pro_role?`<button class="btn sm" onclick="role('${x.id}','remove')">rôle −</button>`:`<button class="btn sm" onclick="role('${x.id}','add')">rôle +</button>`}${x.registered?`<button class="btn sm" onclick="detail('${x.id}')">analyse</button>`:""}</div></td></tr>`;}).join(""):'<tr><td colspan="5" class="empty">Aucun membre.</td></tr>';applySearch();}
 document.querySelectorAll("#m-filters .chip").forEach(c=>c.addEventListener("click",()=>{document.querySelectorAll("#m-filters .chip").forEach(x=>x.classList.toggle("on",x===c));M_FILTER=c.dataset.f;renderMembers();}));
 
+// tickets
+let TICKETS=[],TK_FILTER="open";
+const stPill={open:'<span class="pill warn">ouvert</span>',answered:'<span class="pill info">répondu</span>',closed:'<span class="pill muted">fermé</span>'};
+async function loadTickets(){const t=await api("/admin/api/tickets");TICKETS=t||[];renderTickets();updateTicketBadge();}
+function renderTickets(){let t=TICKETS;if(TK_FILTER!=="all")t=t.filter(x=>x.status===TK_FILTER);
+  $("tk-count").textContent=TICKETS.length+" ticket(s)";$("tk-note").textContent=TICKETS.length?"":"Aucun ticket. Les utilisateurs ouvrent un ticket en envoyant un MP au bot.";
+  $("tk-rows").innerHTML=t.length?t.map(x=>`<tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(x.discord_id,x.avatar,32)}" width="24" height="24" onerror="${onerr}"/><span>${esc(x.username||x.discord_id)}${x.plan?` <span class="pill ok">${esc(x.plan)}</span>`:""}</span></span></td><td>${stPill[x.status]||esc(x.status)}${x.unread>0?` <span class="pill bad">${x.unread}</span>`:""}</td><td class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc((x.last_message||"").slice(0,80))}</td><td>${x.msg_count}</td><td>${dt(x.updated_at)}</td><td><button class="btn sm primary" onclick="openTicket(${x.id})">ouvrir</button></td></tr>`).join(""):'<tr><td colspan="6" class="empty">Aucun ticket.</td></tr>';applySearch();}
+function updateTicketBadge(){const tot=TICKETS.reduce((a,x)=>a+(x.unread||0),0);const n=document.querySelector('.nav[data-tab="tickets"]');n.querySelector(".badge")?.remove();if(tot>0){const b=document.createElement("span");b.className="badge";b.textContent=tot;n.appendChild(b);}}
+document.querySelectorAll("#tk-filters .chip").forEach(c=>c.addEventListener("click",()=>{document.querySelectorAll("#tk-filters .chip").forEach(x=>x.classList.toggle("on",x===c));TK_FILTER=c.dataset.f;renderTickets();}));
+async function openTicket(id){const d=await api("/admin/api/ticket?id="+id);if(!d)return;const t=d.ticket;
+  const convo=d.messages.map(m=>`<div class="msg ${m.author}${m.deleted?" del":""}"><div class="who">${m.author==="admin"?"toi (admin)":esc(t.username||"utilisateur")}</div><div class="body">${esc(m.content)}</div><div class="meta">${dt(m.created_at)}${m.deleted?" · supprimé":""}${m.edited?` · modifié${m.original_content?` (avant : ${esc(m.original_content).slice(0,60)})`:""}`:""}</div></div>`).join("")||'<div class="empty">aucun message</div>';
+  $("modal-body").innerHTML=`<div class="card-h" style="align-items:flex-start"><div class="row" style="gap:12px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(t.discord_id,t.avatar,48)}" width="48" height="48" style="border-radius:14px" onerror="${onerr}"/><div><h2 style="margin:0">Ticket #${t.id} — ${esc(t.username||t.discord_id)}</h2><div class="mono muted tiny">ID ${esc(t.discord_id)} · ${stPill[t.status]||esc(t.status)}</div></div></div><button class="btn sm" onclick="closeModal()">fermer</button></div>
+  <div class="convo" id="tk-convo">${convo}</div>
+  <div class="reply"><textarea id="tk-reply" placeholder="Ta réponse (envoyée en DM à l'utilisateur)…"></textarea></div>
+  <div class="row" style="margin-top:8px;justify-content:space-between"><button class="btn ${t.status==="closed"?"":"bad"}" onclick="closeTicket(${t.id},${t.status==="closed"?1:0})">${t.status==="closed"?"Rouvrir":"Fermer le ticket"}</button><button class="btn primary" onclick="replyTicket(${t.id})">Envoyer la réponse</button></div>`;
+  $("modal").classList.remove("hide");const c=$("tk-convo");c.scrollTop=c.scrollHeight;
+  TICKETS=TICKETS.map(x=>x.id===id?{...x,unread:0}:x);updateTicketBadge();}
+async function replyTicket(id){const m=$("tk-reply").value.trim();if(!m){toast("Message vide","bad");return;}const r=await api("/admin/api/ticket/reply",{id,message:m});if(r){toast(r.sent?"Réponse envoyée en DM":"Enregistré (bot non configuré ?)","ok");openTicket(id);loadTickets();}}
+async function closeTicket(id,reopen){await api("/admin/api/ticket/close",{id,reopen:!!reopen});toast(reopen?"Ticket rouvert":"Ticket fermé");closeModal();loadTickets();}
+
 // detail
 async function detail(id){const d=await api("/admin/api/user?discord_id="+encodeURIComponent(id));if(!d)return;const s=d.snapshot,hw=(s&&s.hw)||{},u=d.user,us=d.usage||{};const curPlan=(d.keys.find(k=>!k.revoked&&(!k.expires_at||new Date(k.expires_at)>new Date()))||{}).plan||"free";
   $("modal-body").innerHTML=`<div class="card-h" style="align-items:flex-start"><div class="row" style="gap:14px;flex-wrap:nowrap"><img class="ava-img" src="${esc(d.avatar)}" width="64" height="64" style="border-radius:16px" onerror="${onerr}"/><div><h2 style="margin:0">${esc(u.username||id)} ${u.banned?'<span class="pill bad">banni</span>':''}</h2><div class="mono muted tiny">ID ${esc(id)}</div><div class="muted tiny">Vu depuis le ${dt(u.created_at)}</div></div></div><button class="btn sm" onclick="closeModal()">fermer</button></div>
@@ -460,11 +509,12 @@ $("b-savesettings").addEventListener("click",saveSettings);
 $("b-bcapp").addEventListener("click",()=>broadcast("app"));
 $("b-bcdm").addEventListener("click",()=>broadcast("dm"));
 $("b-backup").addEventListener("click",()=>{location.href="/admin/api/backup";});
+$("b-tkrefresh").addEventListener("click",loadTickets);
 
 // SSE temps réel
-try{const es=new EventSource("/admin/api/alerts/stream");es.onmessage=()=>{loadAlerts();loadStats();const l=document.querySelector(".live i");if(l){l.style.opacity=.3;setTimeout(()=>l.style.opacity=1,300);}};}catch(e){}
+try{const es=new EventSource("/admin/api/alerts/stream");es.onmessage=()=>{loadAlerts();loadStats();loadTickets();const l=document.querySelector(".live i");if(l){l.style.opacity=.3;setTimeout(()=>l.style.opacity=1,300);}};}catch(e){}
 $("dash").classList.add("enter");
-loadStats();loadAlerts();setInterval(loadStats,30000);
+loadStats();loadAlerts();loadTickets();setInterval(loadStats,30000);
 </script>
 </body>
 </html>

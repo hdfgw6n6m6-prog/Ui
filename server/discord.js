@@ -33,6 +33,12 @@ export async function dmUser(userId, content) {
   return dapi(`/channels/${ch.id}/messages`, "POST", { content });
 }
 
+/// Envoie un EMBED en message privé (utilisé pour l'accueil des tickets).
+export async function dmEmbed(userId, embed) {
+  const ch = await dapi("/users/@me/channels", "POST", { recipient_id: userId });
+  return dapi(`/channels/${ch.id}/messages`, "POST", { embeds: [embed] });
+}
+
 /// Attribue le rôle Pro (ou tout rôle) à un membre du serveur.
 export async function addRole(userId, roleId = process.env.DISCORD_PRO_ROLE_ID) {
   if (!roleId) return;
