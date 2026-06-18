@@ -129,11 +129,18 @@ async function run() {
   const tdet = await (await jget("/admin/api/ticket?id=" + ti, cookie)).json();
   ok(tdet.ticket && tdet.messages.length === 2, "détail du ticket (2 messages)");
   ok(tdet.messages.some((m) => m.deleted === 1 && m.content === "message supprimé"), "message supprimé conservé et visible");
+  ok(tdet.account && "registered" in tdet.account && "plan" in tdet.account && "devices" in tdet.account, "profil de l'user détecté (actions proposables)");
   const trep = await (await jpost("/admin/api/ticket/reply", { id: ti, message: "on regarde ça !" }, cookie)).json();
   ok(trep.ok === true, "réponse admin enregistrée (DM)");
   const tdet2 = await (await jget("/admin/api/ticket?id=" + ti, cookie)).json();
   ok(tdet2.ticket.status === "answered" && tdet2.messages.length === 3, "ticket -> répondu, message admin ajouté");
   ok((await (await jpost("/admin/api/ticket/close", { id: ti }, cookie)).json()).ok === true, "fermeture du ticket");
+
+  console.log("=== ACTIONS SUR L'USER (depuis un ticket) ===");
+  ok((await jpost("/admin/api/discord/ban", { discord_id: "111", unban: true }, cookie)).status === 200, "ban Discord (endpoint répond)");
+  const bu = await (await jpost("/admin/api/blacklist_user", { discord_id: "111", reason: "test" }, cookie)).json();
+  ok(bu.ok === true && bu.hwids >= 1, "blacklist complet du compte (HWID + ban)");
+  ok((await (await jget("/admin/api/blacklist", cookie)).json()).some((b) => b.discord_id === "111"), "HWID du compte blacklisté");
 
   console.log("=== SÉCURITÉ ===");
   const hr = await jget("/admin/api/stats", cookie);
@@ -155,14 +162,20 @@ async function run() {
 // Test de PERSISTANCE : on redémarre le serveur sur la MÊME base et on vérifie.
 async function persistenceTest() {
   console.log("=== PERSISTANCE (redémarrage serveur) ===");
-  const before = (await (await jget("/admin/api/keys", await login())).json()).length;
+  const c0 = await login();
+  const before = (await (await jget("/admin/api/keys", c0)).json()).length;
+  const ticketsBefore = (await (await jget("/admin/api/tickets", c0)).json()).length;
   srv.kill("SIGTERM");
   await new Promise((r) => setTimeout(r, 1200));
   srv = spawn("node", ["server.js"], { cwd: __dirname, env });
   srv.stderr.on("data", (d) => process.stderr.write(d));
   await waitReady();
-  const after = (await (await jget("/admin/api/keys", await login())).json()).length;
-  ok(after > 0 && after === before, `données conservées après redémarrage (${before} clés, idem après)`);
+  const c1 = await login();
+  const after = (await (await jget("/admin/api/keys", c1)).json()).length;
+  ok(after > 0 && after === before, `clés conservées après redémarrage (${before} -> ${after})`);
+  const ticketsAfter = await (await jget("/admin/api/tickets", c1)).json();
+  ok(ticketsAfter.length === ticketsBefore && ticketsBefore > 0, `TICKETS conservés au redémarrage (${ticketsBefore} -> ${ticketsAfter.length})`);
+  ok(ticketsAfter.every((t) => t.status !== undefined), "les tickets gardent leur statut (pas auto-fermés)");
 }
 
 // Attendre que le serveur soit prêt, lancer, nettoyer.

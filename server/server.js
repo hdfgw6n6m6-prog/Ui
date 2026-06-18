@@ -668,7 +668,38 @@ app.get("/admin/api/ticket", admin, (req, res) => {
   if (!t) return res.status(404).json({ error: "introuvable" });
   const messages = db.prepare("SELECT id,author,content,deleted,edited,original_content,created_at FROM ticket_messages WHERE ticket_id=? ORDER BY id").all(t.id);
   db.prepare("UPDATE tickets SET last_read_at=datetime('now') WHERE id=?").run(t.id); // marquer lu
-  res.json({ ticket: t, messages });
+  // Le bot "détecte" l'utilisateur -> on renvoie son profil pour proposer des actions.
+  const u = db.prepare("SELECT username,avatar,email,banned,created_at FROM users WHERE discord_id=?").get(t.discord_id);
+  const plan = db.prepare("SELECT plan FROM keys WHERE discord_id=? AND revoked=0 AND (expires_at IS NULL OR expires_at>datetime('now')) ORDER BY expires_at DESC LIMIT 1").get(t.discord_id)?.plan || null;
+  const devices = db.prepare("SELECT COUNT(*) c FROM devices WHERE discord_id=?").get(t.discord_id).c;
+  const blacklisted = !!db.prepare("SELECT 1 FROM blacklist WHERE discord_id=? LIMIT 1").get(t.discord_id);
+  res.json({ ticket: t, messages, account: { registered: !!u, banned: u?.banned === 1, email: u?.email || null, avatar: u?.avatar || null, plan, devices, blacklisted } });
+});
+
+// Ban / déban du SERVEUR Discord (via le bot effecteur).
+app.post("/admin/api/discord/ban", admin, async (req, res) => {
+  const { discord_id, unban } = req.body ?? {};
+  if (!discord_id) return res.status(400).json({ error: "discord_id requis" });
+  const r = await discord.safe(() => (unban ? discord.unbanMember(discord_id) : discord.banMember(discord_id)));
+  log("discord_ban", { discord_id: req.admin.id, detail: `${unban ? "unban" : "ban"} ${discord_id}` });
+  alert("warn", `${unban ? "Déban" : "Ban"} Discord de <@${discord_id}>`, discord_id);
+  res.json({ ok: true, sent: r !== null, configured: !!process.env.DISCORD_BOT_TOKEN });
+});
+
+// Blacklist COMPLET d'un compte : tous ses HWID + ban app + révocation des clés.
+app.post("/admin/api/blacklist_user", admin, (req, res) => {
+  const { discord_id, reason = "blacklist (compte)" } = req.body ?? {};
+  if (!discord_id) return res.status(400).json({ error: "discord_id requis" });
+  const hwids = db.prepare("SELECT hwid FROM devices WHERE discord_id=?").all(discord_id).map((r) => r.hwid);
+  const ins = db.prepare("INSERT OR REPLACE INTO blacklist (hwid,discord_id,reason) VALUES (?,?,?)");
+  for (const h of hwids) ins.run(h, discord_id, reason);
+  db.prepare("INSERT OR IGNORE INTO users (discord_id) VALUES (?)").run(discord_id);
+  db.prepare("UPDATE users SET banned=1 WHERE discord_id=?").run(discord_id);
+  db.prepare("UPDATE keys SET revoked=1 WHERE discord_id=?").run(discord_id);
+  discord.safe(() => discord.removeRole(discord_id));
+  alert("bad", `Compte <@${discord_id}> blacklisté (${hwids.length} HWID) + clés révoquées`, discord_id);
+  log("blacklist_user", { discord_id: req.admin.id, detail: `${discord_id} (${hwids.length} hwid)` });
+  res.json({ ok: true, hwids: hwids.length });
 });
 
 app.post("/admin/api/ticket/reply", admin, async (req, res) => {

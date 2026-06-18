@@ -51,6 +51,17 @@ export async function removeRole(userId, roleId = process.env.DISCORD_PRO_ROLE_I
   return dapi(`/guilds/${process.env.DISCORD_GUILD_ID}/members/${userId}/roles/${roleId}`, "DELETE");
 }
 
+/// Bannit un membre du SERVEUR Discord (différent du ban "app"). Réversible via unban.
+export async function banMember(userId) {
+  return dapi(`/guilds/${process.env.DISCORD_GUILD_ID}/bans/${userId}`, "PUT", { delete_message_seconds: 0 });
+}
+export async function unbanMember(userId) {
+  return dapi(`/guilds/${process.env.DISCORD_GUILD_ID}/bans/${userId}`, "DELETE");
+}
+export async function kickMember(userId) {
+  return dapi(`/guilds/${process.env.DISCORD_GUILD_ID}/members/${userId}`, "DELETE");
+}
+
 /// Poste un message dans le salon de logs (traçabilité côté Discord).
 export async function postLog(content) {
   if (!process.env.DISCORD_LOG_CHANNEL_ID) return;
