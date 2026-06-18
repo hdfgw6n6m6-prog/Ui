@@ -167,9 +167,35 @@
     h3{display:none}.brand{padding:0 10px 0 0}.nav span{display:none}.nav{width:auto}.rail-foot{display:none}
     .grid2{grid-template-columns:1fr}.search{display:none}
   }
+
+  /* ===== FOND ANIMÉ "DESIGNER" (mesh shader) + SURFACES VITRÉES ===== */
+  body{background:#e9eef6}
+  body::before{display:none} /* ancien aurora -> remplacé par .bg */
+  .bg{position:fixed;inset:0;z-index:-2;overflow:hidden;background:linear-gradient(140deg,#eef2f8,#e6ecf6)}
+  .bg span{position:absolute;border-radius:50%;filter:blur(80px);opacity:.6;will-change:transform}
+  .bg span:nth-child(1){width:58vw;height:58vw;left:-10vw;top:-14vw;background:hsl(203,100%,62%);animation:bm1 26s ease-in-out infinite alternate}
+  .bg span:nth-child(2){width:50vw;height:50vw;right:-12vw;top:-8vw;background:hsl(264,100%,61%);animation:bm2 31s ease-in-out infinite alternate}
+  .bg span:nth-child(3){width:54vw;height:54vw;right:-4vw;bottom:-18vw;background:hsl(158,99%,59%);animation:bm3 28s ease-in-out infinite alternate}
+  .bg span:nth-child(4){width:48vw;height:48vw;left:4vw;bottom:-14vw;background:hsl(255,100%,72%);animation:bm4 34s ease-in-out infinite alternate}
+  @keyframes bm1{to{transform:translate(24vw,16vh) scale(1.25) rotate(40deg)}}
+  @keyframes bm2{to{transform:translate(-20vw,22vh) scale(1.15) rotate(-30deg)}}
+  @keyframes bm3{to{transform:translate(-24vw,-14vh) scale(1.3) rotate(25deg)}}
+  @keyframes bm4{to{transform:translate(22vw,-18vh) scale(1.2) rotate(-40deg)}}
+
+  /* Surfaces "vitre" : le fond coloré transparaît derrière le verre dépoli */
+  .rail{background:rgba(255,255,255,.5)}
+  .topbar{background:rgba(255,255,255,.46)}
+  .card,.kpi{background:rgba(255,255,255,.58);border-color:rgba(255,255,255,.55);backdrop-filter:saturate(180%) blur(30px);-webkit-backdrop-filter:saturate(180%) blur(30px)}
+  .modal-card{background:rgba(255,255,255,.74);border-color:rgba(255,255,255,.6)}
+  .qa button,.me,.logout,.search input,.btn,input,select,textarea{background:rgba(255,255,255,.52);backdrop-filter:saturate(150%) blur(14px);-webkit-backdrop-filter:saturate(150%) blur(14px)}
+  .btn.primary{background:var(--accent)} /* le bouton bleu reste plein */
+  .toast{background:rgba(255,255,255,.8)}
+  .alert{background:rgba(255,255,255,.4)}
+  @media(prefers-reduced-motion:reduce){.bg span{animation:none!important}}
 </style>
 </head>
 <body>
+<div class="bg" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <filter id="liquid-glass" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
     <feTurbulence type="fractalNoise" baseFrequency="0.05 0.05" numOctaves="1" seed="1" result="noise"/>
