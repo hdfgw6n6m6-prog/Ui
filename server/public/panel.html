@@ -165,9 +165,35 @@
   .toast{animation:tin .4s cubic-bezier(.22,1,.36,1)}@keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(14px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
   .modal-card{animation:min .35s cubic-bezier(.22,1,.36,1)}@keyframes min{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.card:hover,.kpi:hover,.nav:hover{transform:none!important}}
+
+  /* ---- LIQUID GLASS (boutons) + TUBELIGHT (nav) ---- */
+  .btn.primary{position:relative;overflow:hidden;isolation:isolate;
+    background:linear-gradient(180deg,rgba(139,92,246,.95),rgba(124,58,237,.95));
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 8px 26px rgba(139,92,246,.42),
+      inset 1px 1px 1px -.5px rgba(255,255,255,.55),
+      inset -1px -1px 1px -.5px rgba(255,255,255,.22),
+      inset 0 0 10px 5px rgba(255,255,255,.06);
+    transition:transform .25s cubic-bezier(.1,.4,.2,1),filter .2s,box-shadow .25s}
+  .btn.primary::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;
+    backdrop-filter:url("#liquid-glass");-webkit-backdrop-filter:blur(2px)}
+  .btn.primary:hover{transform:translateY(-1px) scale(1.03);filter:brightness(1.08);box-shadow:0 12px 32px rgba(139,92,246,.5),inset 1px 1px 1px -.5px rgba(255,255,255,.6),inset -1px -1px 1px -.5px rgba(255,255,255,.25),inset 0 0 12px 6px rgba(255,255,255,.08)}
+  .btn.primary:active{transform:scale(.97)}
+  /* Tubelight : barre lumineuse sur l'onglet actif (sidebar verticale) */
+  .nav.on::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+    width:3px;height:66%;border-radius:0 5px 5px 0;background:var(--pulse);
+    box-shadow:0 0 12px 2px var(--pulse),0 0 24px 7px rgba(139,92,246,.5),0 0 40px 12px rgba(139,92,246,.25)}
+  .nav.on{box-shadow:none}
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="liquid-glass" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05 0.05" numOctaves="1" seed="1" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="blur"/>
+    <feDisplacementMap in="SourceGraphic" in2="blur" scale="60" xChannelSelector="R" yChannelSelector="B"/>
+  </filter>
+</defs></svg>
 <div class="wrap">
   <nav class="rail">
     <div class="brand"><span class="glow"></span><div>PulseBoost<small>Console admin</small></div></div>

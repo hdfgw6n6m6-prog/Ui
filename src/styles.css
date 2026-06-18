@@ -473,3 +473,40 @@ body::before {
   .card:hover, .nav:hover, .game:hover, .tweak label:hover, .reco li:hover, .btn.lg:hover { transform: none !important; }
   body::before { animation: none !important; }
 }
+
+/* ============================================================
+   LIQUID GLASS (boutons premium) + TUBELIGHT (navigation)
+   ============================================================ */
+.btn.primary, .btn.pro-cta, .btn.lg.primary {
+  position: relative; overflow: hidden; isolation: isolate;
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow:
+    0 8px 28px rgba(139,92,246,.42),
+    inset 1px 1px 1px -.5px rgba(255,255,255,.55),
+    inset -1px -1px 1px -.5px rgba(255,255,255,.22),
+    inset 0 0 10px 5px rgba(255,255,255,.06);
+  transition: transform .25s cubic-bezier(.1,.4,.2,1), filter .2s, box-shadow .25s;
+}
+.btn.primary::before, .btn.pro-cta::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  backdrop-filter: url("#liquid-glass");
+}
+.btn.primary:hover:not(:disabled), .btn.pro-cta:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.03); filter: brightness(1.09);
+  box-shadow: 0 14px 36px rgba(139,92,246,.55),
+    inset 1px 1px 1px -.5px rgba(255,255,255,.62),
+    inset -1px -1px 1px -.5px rgba(255,255,255,.26),
+    inset 0 0 12px 6px rgba(255,255,255,.08);
+}
+.btn.primary:active:not(:disabled), .btn.pro-cta:active:not(:disabled) { transform: scale(.97); }
+
+/* Tubelight : lampe lumineuse sur l'onglet actif du rail */
+.nav.on { box-shadow: none; }
+.nav.on::before {
+  content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 64%; border-radius: 0 5px 5px 0; background: var(--pulse);
+  box-shadow: 0 0 12px 2px var(--pulse), 0 0 26px 8px rgba(139,92,246,.5), 0 0 44px 14px rgba(139,92,246,.22);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn.primary:hover, .btn.pro-cta:hover { transform: none !important; }
+}
