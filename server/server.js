@@ -1,0 +1,1018 @@
+// server/server.js — PulseBoost : licence liée au compte Discord + panel web.
+//
+// Flux : l'app fait un login Discord (OAuth) -> session signée.
+//        L'utilisateur "redeem" une clé -> la clé est liée à son ID Discord.
+//        L'entitlement est vérifié par compte Discord (plus de partage de clé).
+//
+//   Env requis :
+//     DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET
+//     PUBLIC_URL=https://api.tondomaine.com   (URL publique de CE serveur)
+//     SESSION_SECRET=...        (HMAC sessions, 32+ octets aleatoires)
+//     LICENSE_PRIVATE_KEY=...   (Ed25519, depuis keygen.js)
+//     ADMIN_DISCORD_IDS=123,456 (IDs Discord autorises sur le panel)
+//
+//   node keygen.js  (une fois)   puis   node server.js
+
+import express from "express";
+import "./config.js"; // charge la config (config.js) et peuple process.env
+import crypto from "node:crypto";
+import fs from "node:fs";
+import Database from "better-sqlite3";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as discord from "./discord.js";
+import { startTickets } from "./tickets.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app = express();
+app.disable("x-powered-by");
+app.set("trust proxy", true); // derrière le reverse-proxy : vraie IP client dans req.ip
+app.use(express.json({ limit: "256kb" }));
+app.use(express.urlencoded({ extended: true }));
+
+const PUBLIC_URL = process.env.PUBLIC_URL ?? "http://localhost:8787";
+const IS_HTTPS = PUBLIC_URL.startsWith("https");
+const COOKIE_SEC = IS_HTTPS ? "; Secure" : ""; // flag Secure quand on est en HTTPS
+
+// --- En-têtes de sécurité (toutes les réponses) ---
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; " +
+    "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
+    "connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'");
+  if (IS_HTTPS) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  next();
+});
+
+// --- Limiteur de débit en mémoire (anti brute-force / abus) ---
+const rateBuckets = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const b = rateBuckets.get(key);
+  if (!b || now > b.reset) { rateBuckets.set(key, { n: 1, reset: now + windowMs }); return true; }
+  b.n++;
+  return b.n <= max;
+}
+setInterval(() => { const now = Date.now(); for (const [k, b] of rateBuckets) if (now > b.reset) rateBuckets.delete(k); }, 5 * 60000);
+const ADMIN_IDS = (process.env.ADMIN_DISCORD_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+// RBAC multi-niveaux : owner > mod > support. Variables d'env séparées par rôle.
+const tierIds = (n) => (process.env[n] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const ADMIN_OWNER_IDS = tierIds("ADMIN_OWNER_IDS");
+const ADMIN_MOD_IDS = tierIds("ADMIN_MOD_IDS");
+const ADMIN_SUPPORT_IDS = tierIds("ADMIN_SUPPORT_IDS");
+const ROLES_CONFIGURED = !!(ADMIN_OWNER_IDS.length || ADMIN_MOD_IDS.length || ADMIN_SUPPORT_IDS.length);
+
+// --- Plans (durée par plan) ---
+const PLAN_DAYS = { weekly: 7, monthly: 30, quarterly: 90, lifetime: 0 };
+const PLAN_LABEL = { weekly: "Hebdomadaire", monthly: "Mensuel", quarterly: "Trimestriel", lifetime: "À vie" };
+
+// --- Base de donnees ---
+// DATA_DIR permet de placer la base sur un disque persistant (utile sur un
+// hebergeur de bots Node ou le filesystem applicatif peut etre ephemere).
+const DATA_DIR = process.env.DATA_DIR ?? __dirname;
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const db = new Database(path.join(DATA_DIR, "pulseboost.db"));
+db.pragma("journal_mode = WAL");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    discord_id TEXT PRIMARY KEY, username TEXT, avatar TEXT,
+    banned INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')), last_login TEXT
+  );
+  CREATE TABLE IF NOT EXISTS keys (
+    key TEXT PRIMARY KEY, plan TEXT NOT NULL, days INTEGER NOT NULL,
+    discord_id TEXT, redeemed_at TEXT, expires_at TEXT,
+    revoked INTEGER DEFAULT 0, note TEXT, created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS devices (
+    discord_id TEXT, hwid TEXT, label TEXT,
+    first_seen TEXT DEFAULT (datetime('now')), last_seen TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (discord_id, hwid)
+  );
+  CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, discord_id TEXT,
+    hwid TEXT, ip TEXT, detail TEXT, at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT, discord_id TEXT,
+    message TEXT, resolved INTEGER DEFAULT 0, at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS commands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, type TEXT,
+    payload TEXT, delivered INTEGER DEFAULT 0, at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS flags (name TEXT PRIMARY KEY, enabled INTEGER, scope TEXT);
+  CREATE TABLE IF NOT EXISTS blacklist (hwid TEXT PRIMARY KEY, discord_id TEXT, reason TEXT, at TEXT DEFAULT (datetime('now')));
+  CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, hwid TEXT, type TEXT, detail TEXT, at TEXT DEFAULT (datetime('now')));
+  CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, reason TEXT, comment TEXT, at TEXT DEFAULT (datetime('now')));
+  CREATE TABLE IF NOT EXISTS snapshots (discord_id TEXT PRIMARY KEY, hwid TEXT, score INTEGER, hw TEXT, last_seen TEXT DEFAULT (datetime('now')));
+  CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+  CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT);
+  CREATE TABLE IF NOT EXISTS tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT, username TEXT,
+    status TEXT DEFAULT 'open', created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')), last_read_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS ticket_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id INTEGER, author TEXT,
+    content TEXT, discord_message_id TEXT, deleted INTEGER DEFAULT 0,
+    edited INTEGER DEFAULT 0, original_content TEXT, created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_tmsg_ticket ON ticket_messages(ticket_id);
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id TEXT, admin_name TEXT, role TEXT,
+    action TEXT, target TEXT, detail TEXT, ip TEXT, at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_logs(at);
+`);
+// Migration idempotente : colonnes email (collectées via OAuth scope `email`).
+for (const col of ["email TEXT", "email_verified INTEGER"]) {
+  try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch {}
+}
+// Réglages par défaut (modifiables dans le panel).
+const getSetting = (n, d = "") => db.prepare("SELECT value FROM settings WHERE name=?").get(n)?.value ?? d;
+const setSetting = (n, v) => db.prepare("INSERT INTO settings (name,value) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value").run(n, String(v ?? ""));
+for (const [n, v] of [["announcement", ""], ["latest_version", ""], ["download_url", ""], ["shop_url", ""]]) {
+  db.prepare("INSERT OR IGNORE INTO settings (name,value) VALUES (?,?)").run(n, v);
+}
+for (const [n, s] of [["ai_analysis","pro"],["ai_chat","pro"],["network_tweaks","pro"],["game_profiles","pro"],["monitoring","free"]]) {
+  db.prepare("INSERT OR IGNORE INTO flags (name, enabled, scope) VALUES (?,1,?)").run(n, s);
+}
+
+const log = (type, { discord_id=null, hwid=null, ip=null, detail=null } = {}) =>
+  db.prepare("INSERT INTO logs (type,discord_id,hwid,ip,detail) VALUES (?,?,?,?,?)").run(type, discord_id, hwid, ip, detail);
+
+// --- Alertes + flux SSE ---
+const sseClients = new Set();
+function alert(level, message, discord_id = null) {
+  const info = db.prepare("INSERT INTO alerts (level,discord_id,message) VALUES (?,?,?)").run(level, discord_id, message);
+  const payload = JSON.stringify({ id: info.lastInsertRowid, level, message, discord_id, at: new Date().toISOString() });
+  for (const res of sseClients) res.write(`data: ${payload}\n\n`);
+}
+
+// --- Crypto : sessions HMAC + tokens Ed25519 ---
+const SESSION_SECRET = process.env.SESSION_SECRET ?? "dev-secret-change-me";
+function makeSession(payload, ttlMs = 30 * 86400000) {
+  const body = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + ttlMs })).toString("base64url");
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(body).digest("base64url");
+  return `${body}.${sig}`;
+}
+function readSession(token) {
+  if (!token || !token.includes(".")) return null;
+  const [body, sig] = token.split(".");
+  const expect = crypto.createHmac("sha256", SESSION_SECRET).update(body).digest("base64url");
+  try { if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null; } catch { return null; }
+  const data = JSON.parse(Buffer.from(body, "base64url").toString());
+  if (data.exp < Date.now()) return null;
+  return data;
+}
+const PRIV = process.env.LICENSE_PRIVATE_KEY
+  ? crypto.createPrivateKey({ key: Buffer.from(process.env.LICENSE_PRIVATE_KEY, "hex"), format: "der", type: "pkcs8" })
+  : null;
+function signEntitlement(payload) {
+  const body = Buffer.from(JSON.stringify(payload));
+  return body.toString("base64url") + "." + crypto.sign(null, body, PRIV).toString("base64url");
+}
+
+// --- Discord OAuth ---
+async function discordExchange(code, redirectUri) {
+  const r = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET,
+      grant_type: "authorization_code", code, redirect_uri: redirectUri,
+    }),
+  });
+  const tok = await r.json();
+  if (!tok.access_token) {
+    const e = new Error("token_exchange_failed");
+    e.detail = tok; // ex. { error: "invalid_client" } -> mauvais CLIENT_SECRET / redirect_uri
+    throw e;
+  }
+  const u = await fetch("https://discord.com/api/users/@me", { headers: { Authorization: `Bearer ${tok.access_token}` } }).then((x) => x.json());
+  if (!u.id) { const e = new Error("profile_failed"); e.detail = u; throw e; }
+  return u;
+}
+
+// Page HTML stylée (claire, façon Apple) pour les retours OAuth de l'app.
+function oauthPage(kind, title, msg) {
+  const icon = kind === "ok" ? "✅" : kind === "error" ? "⚠️" : "🔐";
+  const color = kind === "error" ? "#e0245e" : "#1d1d1f";
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PulseBoost</title></head>
+<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f5f5f7;color:#1d1d1f;display:flex;align-items:center;justify-content:center;min-height:100vh">
+<div style="text-align:center;background:#fff;padding:44px 52px;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.12);max-width:430px">
+<div style="font-size:42px">${icon}</div>
+<h2 style="margin:14px 0 8px;color:${color}">${title}</h2>
+<p style="color:#6e6e73;margin:0;line-height:1.55">${msg}</p>
+</div></body></html>`;
+}
+
+// Callback de l'APP desktop -> redirige vers le loopback local de l'app.
+app.get("/auth/callback", async (req, res) => {
+  // Accès DIRECT (sans code/state) : ce n'est pas une erreur, juste une page technique.
+  if (!req.query.code || !req.query.state) {
+    return res.status(200).send(oauthPage("info", "Page de connexion PulseBoost",
+      "Cette page s'ouvre automatiquement pendant la connexion Discord. Reviens dans l'application et clique sur « Se connecter avec Discord »."));
+  }
+  let st;
+  try { st = JSON.parse(Buffer.from(req.query.state, "base64url").toString()); } // { port, nonce }
+  catch { return res.status(400).send(oauthPage("error", "Lien invalide", "Le paramètre d'état est illisible. Relance la connexion depuis l'application.")); }
+
+  try {
+    const u = await discordExchange(req.query.code, `${PUBLIC_URL}/auth/callback`);
+    // Email capturé via le scope `email` (consenti). Conservé même si l'utilisateur
+    // retire l'app plus tard (Discord ne le supprime pas chez nous).
+    const email = u.email ?? null;
+    db.prepare(`INSERT INTO users (discord_id,username,avatar,email,email_verified,last_login) VALUES (?,?,?,?,?,datetime('now'))
+                ON CONFLICT(discord_id) DO UPDATE SET username=excluded.username, avatar=excluded.avatar,
+                  email=COALESCE(excluded.email, users.email), email_verified=excluded.email_verified, last_login=datetime('now')`)
+      .run(u.id, u.username, u.avatar ?? null, email, u.verified ? 1 : 0);
+    if (db.prepare("SELECT banned FROM users WHERE discord_id=?").get(u.id)?.banned)
+      return res.status(403).send(oauthPage("error", "Compte suspendu", "Ton accès PulseBoost a été suspendu. Contacte le support sur le Discord."));
+    log("login", { discord_id: u.id, ip: req.ip });
+    if (email) log("email", { discord_id: u.id, ip: req.ip, detail: email });
+    const session = makeSession({ kind: "app", id: u.id, name: u.username });
+    if (!st.port) // pas de port loopback (cas limite) : on confirme quand même
+      return res.send(oauthPage("ok", "Connexion réussie", "Tu peux fermer cet onglet et revenir dans PulseBoost."));
+    return res.redirect(`http://127.0.0.1:${st.port}/?session=${encodeURIComponent(session)}&name=${encodeURIComponent(u.username)}`);
+  } catch (e) {
+    console.error("[oauth callback]", e.message, e.detail ? JSON.stringify(e.detail).slice(0, 200) : "");
+    const msg = e.message === "token_exchange_failed"
+      ? "Discord a refusé l'échange. Vérifie côté serveur le DISCORD_CLIENT_SECRET et que l'URL https://zeubi.xyz/auth/callback est bien enregistrée dans les redirections OAuth2 de l'application Discord."
+      : "Une erreur est survenue pendant la connexion. Réessaie depuis l'application.";
+    res.status(502).send(oauthPage("error", "Connexion impossible", msg));
+  }
+});
+
+// --- REDEEM : lier une cle au compte Discord ---
+
+// Le compte a-t-il encore au moins une cle active ? (decide le retrait du role Pro)
+function proStillActive(discord_id) {
+  return !!db.prepare(`SELECT 1 FROM keys WHERE discord_id=? AND revoked=0
+    AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`).get(discord_id);
+}
+
+const normKey = (k) => String(k ?? "").trim().toUpperCase();
+
+// Génère une clé (non liée). Réutilisé par l'admin, le bot, l'achat et les cadeaux.
+const keySeg = () => crypto.randomBytes(3).toString("hex").toUpperCase().slice(0, 4);
+function makeKey(plan, days, note = null) {
+  const key = `PB-${keySeg()}-${keySeg()}-${keySeg()}-${keySeg()}`;
+  db.prepare("INSERT INTO keys (key,plan,days,note) VALUES (?,?,?,?)").run(key, plan, plan === "lifetime" ? 0 : days, note);
+  return key;
+}
+// Crée une clé DÉJÀ liée + active pour un compte (achat / cadeau) -> Pro immédiat.
+function grantPro(discord_id, plan, note = null) {
+  const days = PLAN_DAYS[plan] ?? 30;
+  const key = makeKey(plan, days, note);
+  const expires = plan === "lifetime" ? "2099-01-01T00:00:00Z" : new Date(Date.now() + days * 86400000).toISOString();
+  db.prepare("UPDATE keys SET discord_id=?, redeemed_at=datetime('now'), expires_at=? WHERE key=?").run(discord_id, expires, key);
+  discord.safe(() => discord.addRole(discord_id));
+  return { key, expires };
+}
+
+app.post("/v1/redeem", (req, res) => {
+  const s = readSession(req.body.session);
+  if (!s || s.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  if (!rateLimit("redeem:" + s.id, 12, 60 * 60000)) return res.status(429).json({ error: "Trop de tentatives. Réessaie plus tard." });
+  const key = normKey(req.body.key);
+  const row = db.prepare("SELECT * FROM keys WHERE key=?").get(key);
+  if (!row || row.revoked) { log("redeem_fail", { discord_id: s.id, detail: key }); return res.status(403).json({ error: "Clé invalide ou révoquée." }); }
+
+  // Clé déjà liée à un AUTRE compte -> refus (anti-partage).
+  if (row.discord_id && row.discord_id !== s.id) {
+    alert("warn", `Cle ${key} deja liee a un autre compte - tentative par ${s.name}`, s.id);
+    return res.status(403).json({ error: "Clé déjà utilisée par un autre compte." });
+  }
+
+  const stillActive = (r) => r && !r.revoked && (!r.expires_at || new Date(r.expires_at) > new Date());
+
+  // Clé déjà liée à CE compte : soit déjà active (no-op), soit expirée (dépensée).
+  if (row.discord_id === s.id) {
+    if (stillActive(row)) return res.json({ ok: true, plan: row.plan, expires_at: row.expires_at, already: true, message: "Cette clé est déjà active sur ton compte." });
+    return res.status(409).json({ error: "Cette clé a déjà été utilisée et a expiré." });
+  }
+
+  // RÈGLE : une seule clé active par compte -> interdit d'en activer une 2e.
+  const active = db.prepare(`SELECT plan, expires_at FROM keys WHERE discord_id=? AND revoked=0
+    AND (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY expires_at DESC LIMIT 1`).get(s.id);
+  if (active) {
+    log("redeem_blocked", { discord_id: s.id, detail: `${key} (déjà ${active.plan} actif)` });
+    const fin = active.expires_at ? new Date(active.expires_at).toLocaleDateString("fr-FR") : "—";
+    return res.status(409).json({ error: `Tu as déjà une clé active (${active.plan}, jusqu'au ${fin}). Tu pourras en activer une nouvelle à son expiration.`, code: "active_subscription", expires_at: active.expires_at });
+  }
+
+  // OK : lier + activer la clé neuve.
+  const expires = row.days === 0 ? "2099-01-01T00:00:00Z" : new Date(Date.now() + row.days * 86400000).toISOString();
+  db.prepare("UPDATE keys SET discord_id=?, redeemed_at=COALESCE(redeemed_at,datetime('now')), expires_at=? WHERE key=?").run(s.id, expires, key);
+  log("redeem", { discord_id: s.id, detail: `${key} (${row.plan})` });
+  alert("info", `${s.name} a active une cle ${row.plan}`, s.id);
+  discord.safe(() => discord.addRole(s.id));
+  discord.safe(() => discord.postLog(`✅ **${s.name}** a active une cle **${row.plan}** (\`${key}\`)`));
+  res.json({ ok: true, plan: row.plan, expires_at: expires });
+});
+
+// --- ENTITLEMENT (heartbeat de l'app) ---
+app.post("/v1/entitlement", (req, res) => {
+  const s = readSession(req.body.session);
+  if (!s || s.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  const hwid = String(req.body.hwid ?? "");
+  if (db.prepare("SELECT banned FROM users WHERE discord_id=?").get(s.id)?.banned) return res.status(403).json({ error: "compte banni" });
+
+  // --- Anti-crack : blacklist HWID (propagation a tout le compte) ---
+  const blacklisted = !!db.prepare("SELECT 1 FROM blacklist WHERE hwid=?").get(hwid);
+  if (req.body.tampered || blacklisted) {
+    if (!blacklisted && hwid) {
+      db.prepare("INSERT OR IGNORE INTO blacklist (hwid,discord_id,reason) VALUES (?,?,?)").run(hwid, s.id, "tamper signale par le client");
+      db.prepare("UPDATE keys SET revoked=1 WHERE discord_id=?").run(s.id); // stop full access du compte
+      alert("bad", `Falsification detectee : ${s.name} (HWID blackliste, cles revoquees)`, s.id);
+    }
+    log("blacklist_hit", { discord_id: s.id, hwid, ip: req.ip });
+    return res.json({ pro: false, plan: "free", flags: {}, token: null, blacklisted: true,
+      command: { type: "alert", payload: "Acces bloque : falsification detectee." } });
+  }
+
+  if (hwid) {
+    const existed = db.prepare("SELECT 1 FROM devices WHERE discord_id=? AND hwid=?").get(s.id, hwid);
+    db.prepare(`INSERT INTO devices (discord_id,hwid,last_seen) VALUES (?,?,datetime('now'))
+                ON CONFLICT(discord_id,hwid) DO UPDATE SET last_seen=datetime('now')`).run(s.id, hwid);
+    if (!existed) {
+      const n = db.prepare("SELECT COUNT(*) c FROM devices WHERE discord_id=?").get(s.id).c;
+      if (n > 3) alert("warn", `${s.name} : ${n} appareils differents (partage de compte probable)`, s.id);
+    }
+  }
+
+  const key = db.prepare(`SELECT * FROM keys WHERE discord_id=? AND revoked=0
+                          AND (expires_at IS NULL OR expires_at > datetime('now'))
+                          ORDER BY expires_at DESC LIMIT 1`).get(s.id);
+  const pro = !!key;
+  const flags = Object.fromEntries(db.prepare("SELECT name,enabled,scope FROM flags").all()
+    .map((f) => [f.name, f.enabled === 1 && (f.scope === "free" || pro)]));
+  const cmd = db.prepare("SELECT * FROM commands WHERE discord_id=? AND delivered=0 ORDER BY id LIMIT 1").get(s.id);
+  if (cmd) db.prepare("UPDATE commands SET delivered=1 WHERE id=?").run(cmd.id);
+
+  const token = PRIV ? signEntitlement({
+    id: s.id, hwid, pro, plan: key?.plan ?? "free",
+    exp: Math.min(key ? new Date(key.expires_at).getTime() : Date.now() + 7*86400000, Date.now() + 7*86400000),
+    iat: Date.now(),
+  }) : null;
+  res.json({ pro, plan: key?.plan ?? "free", expires_at: key?.expires_at ?? null, flags, token,
+    command: cmd ? { type: cmd.type, payload: cmd.payload } : null });
+});
+
+// --- TELEMETRIE CLIENT (opt-in cote app) ---
+app.post("/v1/telemetry", (req, res) => {
+  const ss = readSession(req.body.session);
+  if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session" });
+  const hwid = String(req.body.hwid ?? "");
+  const ins = db.prepare("INSERT INTO events (discord_id,hwid,type,detail) VALUES (?,?,?,?)");
+  for (const e of (req.body.events ?? []).slice(0, 50)) ins.run(ss.id, hwid, String(e.type), e.detail != null ? String(e.detail) : null);
+  if (req.body.snapshot) {
+    const { score = null, hw = null } = req.body.snapshot;
+    db.prepare(`INSERT INTO snapshots (discord_id,hwid,score,hw,last_seen) VALUES (?,?,?,?,datetime('now'))
+                ON CONFLICT(discord_id) DO UPDATE SET hwid=excluded.hwid, score=excluded.score, hw=excluded.hw, last_seen=datetime('now')`)
+      .run(ss.id, hwid, score, hw ? JSON.stringify(hw) : null);
+  }
+  res.json({ ok: true });
+});
+
+// --- FEEDBACK DE DESABONNEMENT (churn) ---
+app.post("/v1/churn_feedback", (req, res) => {
+  const ss = readSession(req.body.session);
+  if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session" });
+  db.prepare("INSERT INTO feedback (discord_id,reason,comment) VALUES (?,?,?)").run(ss.id, String(req.body.reason ?? ""), String(req.body.comment ?? ""));
+  alert("info", `Churn: ${ss.name} -> ${req.body.reason}`, ss.id);
+  discord.safe(() => discord.postLog(`📉 **${ss.name}** desabonnement — raison: ${req.body.reason}${req.body.comment ? " ("+req.body.comment+")" : ""}`));
+  res.json({ ok: true });
+});
+
+// --- ANALYSE IA (feature Pro 100% serveur = incrackable par nature) ---
+// Fournisseur : Google Gemini. La cle reste cote serveur, jamais dans le .exe.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+const AI_SYSTEM_PROMPT = `Tu es l'analyste integre d'un logiciel d'optimisation PC pour gamers Windows (FiveM, Fortnite, Valorant, CS2, Warzone).
+REGLES STRICTES :
+- Tu recois un scan hardware + un score deja calcule localement. Tu EXPLIQUES, tu n'inventes pas de chiffres.
+- Jamais de promesse de FPS chiffree : utilise "faible / moyen / variable selon ta config".
+- Le scan peut contenir "running_game" (jeu lance) et "games" (jeux installes) : ADAPTE tes conseils
+  au jeu joue (ex. competitif comme Valorant/CS2 -> priorite latence/reseau ; FiveM -> CPU + reseau).
+- Ton : direct, sympa, niveau debutant, tutoiement.
+- Reponds UNIQUEMENT en JSON valide : { "resume": "...", "recommandations": [{ "id","titre","pourquoi","priorite","impact" }], "limite_materielle": "string|null" }`;
+
+// Petit util : extrait un objet JSON meme si le modele l'enrobe de texte/markdown.
+function parseJsonLoose(text) {
+  const cleaned = String(text ?? "").replace(/```json|```/g, "").trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const a = cleaned.indexOf("{"), b = cleaned.lastIndexOf("}");
+  if (a >= 0 && b > a) return JSON.parse(cleaned.slice(a, b + 1));
+  throw new Error("reponse IA non parsable");
+}
+
+app.post("/v1/analyze", async (req, res) => {
+  const ss = readSession(req.body.session);
+  if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  if (!rateLimit("analyze:" + ss.id, 30, 60 * 60000)) return res.status(429).json({ error: "Trop d'analyses. Réessaie plus tard." });
+  // abonnement actif requis
+  const active = db.prepare(`SELECT 1 FROM keys WHERE discord_id=? AND revoked=0
+    AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`).get(ss.id);
+  const aiFlag = db.prepare("SELECT enabled FROM flags WHERE name='ai_analysis'").get()?.enabled === 1;
+  if (!active || !aiFlag) return res.status(403).json({ error: "analyse IA reservee aux abonnes Pro actifs" });
+  if (!req.body.scan) return res.status(400).json({ error: "scan manquant" });
+  if (!process.env.GEMINI_API_KEY) return res.status(502).json({ error: "IA non configuree (GEMINI_API_KEY)" });
+
+  // Mode Roast : on chambre gentiment, sans jamais inventer de chiffres.
+  const analyzePrompt = req.body.roast_mode
+    ? AI_SYSTEM_PROMPT + `\nMODE ROAST : dans "resume", chambre gentiment l'utilisateur (humour, jamais méchant ni insultant) tout en restant 100% factuel et honnête sur les chiffres.`
+    : AI_SYSTEM_PROMPT;
+
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: analyzePrompt }] },
+          contents: [{ role: "user", parts: [{ text: `Locale: ${req.body.locale ?? "fr"}\nScan PC: ${JSON.stringify(req.body.scan)}` }] }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 1200, responseMimeType: "application/json" },
+        }),
+      }
+    );
+    const data = await r.json();
+    if (!r.ok) { console.error("[gemini]", r.status, JSON.stringify(data).slice(0, 400)); return res.status(502).json({ error: "analyse indisponible" }); }
+    const text = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+    const out = parseJsonLoose(text);
+    db.prepare("INSERT INTO events (discord_id,hwid,type,detail) VALUES (?,?,?,?)")
+      .run(ss.id, String(req.body.hwid ?? ""), "ai_analysis", GEMINI_MODEL);
+    res.json(out);
+  } catch (e) {
+    console.error("[analyze]", e);
+    res.status(502).json({ error: "analyse indisponible" });
+  }
+});
+
+// --- CHAT IA AGENTIQUE (support PC + app), feature Pro 100% serveur ---
+// Gemini voit le profil/etat de l'app (contexte) et PROPOSE des actions que
+// l'app execute APRES confirmation de l'utilisateur. Le serveur n'execute rien
+// sur le PC : il ne fait que router vers Gemini.
+const CHAT_ACTIONS = "free_analysis{}, apply_recommended{}, apply_game_profile{game}, rollback_all{}, reset_profile{}, open_tab{tab in [pulse,optims,securite,assistant]}";
+const CHAT_SYSTEM = `Tu es l'assistant integre de PulseBoost (optimiseur PC pour gamers) ET le support de l'application.
+TON ROLE : aider a regler les problemes du PC (perfs, FPS, latence, reglages Windows) ET les problemes de l'app (licence, activation, optimisations, profil).
+REGLES STRICTES :
+- Jamais de FPS chiffres garantis : "faible / moyen / variable selon ta config".
+- Tu N'EXECUTES rien toi-meme. Quand une action est utile, tu la PROPOSES dans le champ "action" ; l'app demandera CONFIRMATION a l'utilisateur puis l'executera.
+- Pour toute action destructive (reset_profile, rollback_all), ton "reply" DOIT demander clairement confirmation et expliquer les consequences.
+- Actions autorisees (name + args) : ${CHAT_ACTIONS}. Si aucune action n'est utile, "action": null.
+- Sers-toi du CONTEXTE (licence, score, jeux, optimisations appliquees) pour repondre precisement et tutoyer l'utilisateur.
+- Reponds STRICTEMENT en JSON : {"reply":"texte pour l'utilisateur","action": null | {"name":"...","args":{...}}}`;
+
+app.post("/v1/chat", async (req, res) => {
+  const ss = readSession(req.body.session);
+  if (!ss || ss.kind !== "app") return res.status(401).json({ error: "session invalide" });
+  if (!rateLimit("chat:" + ss.id, 60, 60 * 60000)) return res.status(429).json({ error: "Trop de messages. Réessaie plus tard." });
+  const active = db.prepare(`SELECT 1 FROM keys WHERE discord_id=? AND revoked=0
+    AND (expires_at IS NULL OR expires_at > datetime('now')) LIMIT 1`).get(ss.id);
+  const flag = db.prepare("SELECT enabled FROM flags WHERE name='ai_chat'").get()?.enabled === 1;
+  if (!active || !flag) return res.status(403).json({ error: "assistant IA reserve aux abonnes Pro actifs" });
+  if (!process.env.GEMINI_API_KEY) return res.status(502).json({ error: "IA non configuree (GEMINI_API_KEY)" });
+
+  // Historique -> format Gemini (roles user/model), limite a 16 derniers tours.
+  const history = (req.body.messages ?? []).slice(-16).map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: String(m.content ?? "") }],
+  }));
+  if (!history.length) return res.status(400).json({ error: "message manquant" });
+  const context = JSON.stringify(req.body.context ?? {});
+  let sys = `${CHAT_SYSTEM}\nLocale: ${req.body.locale ?? "fr"}\nCONTEXTE UTILISATEUR/APP: ${context}`;
+  // Ton Try Hard / mode Roast injectés selon les préférences (envoyées par l'app).
+  if (req.body.tone === "tryhard") sys += `\nTON TRY HARD : style compétitif et cash, vocabulaire gaming (GG, EZ, clutch, tryhard), mais reste utile, précis et honnête.`;
+  if (req.body.roast_mode) sys += `\nMODE ROAST : chambre gentiment l'utilisateur dans "reply", sans jamais être insultant ni décourageant.`;
+
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: sys }] },
+          contents: history,
+          generationConfig: { temperature: 0.5, maxOutputTokens: 900, responseMimeType: "application/json" },
+        }),
+      }
+    );
+    const data = await r.json();
+    if (!r.ok) { console.error("[gemini chat]", r.status, JSON.stringify(data).slice(0, 400)); return res.status(502).json({ error: "assistant indisponible" }); }
+    const text = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+    const out = parseJsonLoose(text);
+    // Garde-fou : n'accepter que les actions whitelistees.
+    const allowed = ["free_analysis", "apply_recommended", "apply_game_profile", "rollback_all", "reset_profile", "open_tab"];
+    if (out.action && !allowed.includes(out.action.name)) out.action = null;
+    db.prepare("INSERT INTO events (discord_id,hwid,type,detail) VALUES (?,?,?,?)")
+      .run(ss.id, String(req.body.hwid ?? ""), "ai_chat", out.action?.name ?? null);
+    res.json({ reply: String(out.reply ?? ""), action: out.action ?? null });
+  } catch (e) {
+    console.error("[chat]", e);
+    res.status(502).json({ error: "assistant indisponible" });
+  }
+});
+
+// --- ANNONCE / MISE À JOUR (public, lu par l'app) ---
+app.get("/v1/announcement", (req, res) => res.json({
+  message: getSetting("announcement"),
+  version: getSetting("latest_version"),
+  download_url: getSetting("download_url"),
+  // Boutique externe (SellAuth) : l'app y redirige pour acheter une clé. Pas de Stripe.
+  shop_url: process.env.SHOP_URL ?? getSetting("shop_url", ""),
+}));
+
+
+// --- PANEL ADMIN ---
+// Page de login : mot de passe (marche en http/IP, sans Discord) si ADMIN_PASSWORD
+// est défini ; sinon, login Discord OAuth (qui exige du HTTPS).
+function loginPage(error) {
+  const discordBtn = process.env.DISCORD_CLIENT_ID
+    ? `<a class="alt" href="/admin/login?discord=1">ou se connecter avec Discord</a>` : "";
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PulseBoost — Admin</title>
+<style>body{margin:0;height:100vh;display:grid;place-items:center;background:#0b0a12;color:#e9e6f2;font:15px/1.5 system-ui,Segoe UI,sans-serif}
+.box{background:#16131f;border:1px solid rgba(139,92,246,.2);border-radius:16px;padding:32px;width:320px;box-shadow:0 16px 50px rgba(0,0,0,.5)}
+h1{font-size:20px;margin:0 0 4px}.s{color:#8d87a3;font-size:13px;margin-bottom:18px}
+input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid rgba(139,92,246,.25);background:rgba(255,255,255,.04);color:#fff;font:inherit;margin-bottom:12px}
+button{width:100%;padding:12px;border:0;border-radius:10px;background:#8b5cf6;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.err{color:#f43f5e;font-size:13px;margin-bottom:10px}.alt{display:block;text-align:center;margin-top:14px;color:#8d87a3;font-size:13px;text-decoration:none}</style></head>
+<body><form class="box" method="post" action="/admin/auth">
+<h1>PulseBoost · Admin</h1><div class="s">Panneau d'administration</div>
+${error ? '<div class="err">Mot de passe incorrect.</div>' : ""}
+<input type="password" name="password" placeholder="Mot de passe admin" autofocus required>
+<button type="submit">Se connecter</button>${discordBtn}</form></body></html>`;
+}
+function discordLoginRedirect(res) {
+  const state = Buffer.from(JSON.stringify({ admin: true })).toString("base64url");
+  res.redirect(`https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}` +
+    `&response_type=code&scope=identify&redirect_uri=${encodeURIComponent(PUBLIC_URL + "/admin/callback")}&state=${state}`);
+}
+app.get("/admin/login", (req, res) => {
+  if (process.env.ADMIN_PASSWORD && !req.query.discord) return res.send(loginPage(req.query.e));
+  if (!process.env.DISCORD_CLIENT_ID) return res.send(loginPage(req.query.e)); // rien d'autre de configuré
+  discordLoginRedirect(res);
+});
+// Login par mot de passe -> session admin "local" (compare en temps constant).
+app.post("/admin/auth", (req, res) => {
+  if (!rateLimit("login:" + req.ip, 8, 15 * 60000)) { log("admin_login_throttle", { ip: req.ip }); return res.status(429).send("Trop de tentatives. Réessaie dans 15 minutes."); }
+  const real = process.env.ADMIN_PASSWORD ?? "";
+  const pw = String(req.body.password ?? "");
+  const h = (s) => crypto.createHash("sha256").update(s).digest();
+  const ok = real.length > 0 && crypto.timingSafeEqual(h(pw), h(real));
+  if (!ok) { log("admin_login_fail", { ip: req.ip }); return res.redirect("/admin/login?e=1"); }
+  const sess = makeSession({ kind: "admin", id: "local", name: "admin" }, 12 * 3600000);
+  res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${COOKIE_SEC}`);
+  res.redirect("/panel");
+});
+// Déconnexion admin : efface le cookie.
+app.get("/admin/logout", (req, res) => {
+  res.setHeader("Set-Cookie", "pb_admin=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  res.redirect("/admin/login");
+});
+app.get("/admin/callback", async (req, res) => {
+  try {
+    const u = await discordExchange(req.query.code, `${PUBLIC_URL}/admin/callback`);
+    if (!ADMIN_IDS.includes(u.id)) return res.status(403).send("Acces refuse : compte non admin.");
+    const sess = makeSession({ kind: "admin", id: u.id, name: u.username }, 12 * 3600000);
+    res.setHeader("Set-Cookie", `pb_admin=${sess}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${COOKIE_SEC}`);
+    res.redirect("/panel");
+  } catch (e) { console.error(e); res.status(500).send("Erreur OAuth admin"); }
+});
+function readAdmin(req) {
+  const cookie = (req.headers.cookie ?? "").split(";").map((c) => c.trim()).find((c) => c.startsWith("pb_admin="));
+  const s = readSession(cookie?.slice("pb_admin=".length));
+  // id "local" = connexion par mot de passe ; sinon admin Discord vérifié.
+  return s && s.kind === "admin" && (s.id === "local" || ADMIN_IDS.includes(s.id)) ? s : null;
+}
+function admin(req, res, next) {
+  const s = readAdmin(req);
+  if (!s) return res.status(401).json({ error: "non authentifie" });
+  req.admin = s; next();
+}
+
+// --- RBAC : rôle de l'admin courant (owner > mod > support) ---
+const ROLE_RANK = { support: 1, mod: 2, owner: 3 };
+function adminRole(s) {
+  if (!s) return null;
+  if (s.id === "local") return "owner";            // login mot de passe = accès total
+  if (ADMIN_OWNER_IDS.includes(s.id)) return "owner";
+  if (ADMIN_MOD_IDS.includes(s.id)) return "mod";
+  if (ADMIN_SUPPORT_IDS.includes(s.id)) return "support";
+  return ROLES_CONFIGURED ? "support" : "owner";   // admin legacy : owner si aucun tier défini
+}
+function requireRole(role) {
+  return (req, res, next) => {
+    const r = adminRole(req.admin);
+    if (!r || ROLE_RANK[r] < ROLE_RANK[role]) return res.status(403).json({ error: `Action réservée au rôle ${role}.` });
+    next();
+  };
+}
+
+// --- Journal d'audit des actions admin sensibles ---
+function audit(req, action, target = null, detail = null) {
+  try {
+    const s = req.admin || {};
+    db.prepare("INSERT INTO audit_logs (admin_id,admin_name,role,action,target,detail,ip) VALUES (?,?,?,?,?,?,?)")
+      .run(s.id ?? null, s.name ?? null, adminRole(s), action, target, detail, req.ip ?? null);
+  } catch {}
+}
+
+// Rôle de l'admin courant (le panel adapte ses boutons selon le rôle).
+app.get("/admin/api/me", admin, (req, res) => res.json({ id: req.admin.id, name: req.admin.name, role: adminRole(req.admin) }));
+
+// Journal d'audit (recherche globale optionnelle via ?q=).
+app.get("/admin/api/audit", admin, (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  if (q) {
+    const like = `%${q}%`;
+    return res.json(db.prepare(
+      `SELECT * FROM audit_logs WHERE admin_id LIKE ? OR admin_name LIKE ? OR action LIKE ? OR target LIKE ? OR detail LIKE ?
+       ORDER BY id DESC LIMIT 500`).all(like, like, like, like, like));
+  }
+  res.json(db.prepare("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500").all());
+});
+
+// Impersonation (owner only) : session app de 1h pour debugger en tant qu'utilisateur. Tout est journalisé.
+app.post("/admin/api/impersonate", admin, requireRole("owner"), (req, res) => {
+  const { discord_id } = req.body ?? {};
+  if (!discord_id) return res.status(400).json({ error: "discord_id requis" });
+  const u = db.prepare("SELECT username FROM users WHERE discord_id=?").get(discord_id);
+  const session = makeSession({ kind: "app", id: discord_id, name: u?.username ?? "impersonated", impersonated_by: req.admin.id }, 60 * 60000);
+  audit(req, "impersonate", discord_id, "session app 1h");
+  log("impersonate", { discord_id: req.admin.id, detail: `-> ${discord_id}` });
+  alert("warn", `Impersonation de <@${discord_id}> par ${req.admin.name}`, discord_id);
+  res.json({ ok: true, session, expires_in: 3600 });
+});
+
+app.get("/admin/api/stats", admin, (req, res) => res.json({
+  users: db.prepare("SELECT COUNT(*) c FROM users").get().c,
+  active: db.prepare("SELECT COUNT(*) c FROM keys WHERE revoked=0 AND discord_id IS NOT NULL AND (expires_at IS NULL OR expires_at>datetime('now'))").get().c,
+  keys: db.prepare("SELECT COUNT(*) c FROM keys").get().c,
+  alerts: db.prepare("SELECT COUNT(*) c FROM alerts WHERE resolved=0").get().c,
+}));
+app.get("/admin/api/keys", admin, (req, res) => res.json(db.prepare("SELECT * FROM keys ORDER BY created_at DESC LIMIT 500").all()));
+app.post("/admin/api/keys", admin, requireRole("mod"), (req, res) => {
+  const { plan="monthly", days=30, qty=1, note=null } = req.body ?? {};
+  const seg = () => crypto.randomBytes(3).toString("hex").toUpperCase().slice(0,4);
+  const out = [];
+  for (let i=0; i<Math.min(qty,100); i++) {
+    const key = `PB-${seg()}-${seg()}-${seg()}-${seg()}`;
+    db.prepare("INSERT INTO keys (key,plan,days,note) VALUES (?,?,?,?)").run(key, plan, plan==="lifetime"?0:days, note);
+    out.push(key);
+  }
+  log("keys_created", { discord_id: req.admin.id, detail: `${out.length}x ${plan}` });
+  audit(req, "keys_created", null, `${out.length}x ${plan}`);
+  if (req.body.dm_to) {
+    discord.safe(() => discord.dmUser(req.body.dm_to,
+      `🔑 Ta/tes cle(s) PulseBoost **${plan}** :\n${out.map(k => "`"+k+"`").join("\n")}\n\nDans l'app : connecte-toi avec Discord puis colle ta cle.`));
+  }
+  res.json({ keys: out });
+});
+app.post("/admin/api/revoke", admin, (req, res) => {
+  const key = normKey(req.body.key);
+  const owner = db.prepare("SELECT discord_id FROM keys WHERE key=?").get(key)?.discord_id;
+  const r = db.prepare("UPDATE keys SET revoked=1 WHERE key=?").run(key);
+  if (r.changes) {
+    alert("info", `Cle ${key} revoquee par admin`);
+    if (owner && !proStillActive(owner)) discord.safe(() => discord.removeRole(owner));
+    discord.safe(() => discord.postLog(`⛔ Cle \`${key}\` revoquee par admin`));
+  }
+  res.json({ revoked: r.changes === 1 });
+});
+app.post("/admin/api/unbind", admin, (req, res) =>
+  res.json({ unbound: db.prepare("UPDATE keys SET discord_id=NULL, redeemed_at=NULL WHERE key=?").run(normKey(req.body.key)).changes === 1 }));
+app.get("/admin/api/users", admin, (req, res) => res.json(db.prepare(`
+  SELECT u.*, (SELECT COUNT(*) FROM devices d WHERE d.discord_id=u.discord_id) devices,
+         (SELECT plan FROM keys k WHERE k.discord_id=u.discord_id AND k.revoked=0 ORDER BY expires_at DESC LIMIT 1) plan
+  FROM users u ORDER BY last_login DESC LIMIT 500`).all()));
+// TOUS les membres du serveur Discord (via l'effecteur bot). Croisé avec nos comptes.
+app.get("/admin/api/members", admin, async (req, res) => {
+  const proRole = process.env.DISCORD_PRO_ROLE_ID;
+  const members = (await discord.safe(() => discord.listMembers())) || [];
+  const known = new Map(db.prepare("SELECT discord_id, email FROM users").all().map((u) => [u.discord_id, u]));
+  const proIds = new Set(db.prepare(`SELECT DISTINCT discord_id FROM keys WHERE revoked=0 AND discord_id IS NOT NULL AND (expires_at IS NULL OR expires_at>datetime('now'))`).all().map((r) => r.discord_id));
+  const out = members.filter((m) => m.user && !m.user.bot).map((m) => ({
+    id: m.user.id,
+    username: m.user.global_name || m.user.username,
+    nick: m.nick || null,
+    avatar: m.user.avatar,
+    joined_at: m.joined_at,
+    has_pro_role: proRole ? (m.roles || []).includes(proRole) : false,
+    registered: known.has(m.user.id),
+    email: known.get(m.user.id)?.email || null,
+    pro: proIds.has(m.user.id),
+  }));
+  res.json({ total: out.length, members: out, configured: !!process.env.DISCORD_BOT_TOKEN && !!process.env.DISCORD_GUILD_ID });
+});
+
+// Liste des emails collectés (même pour les comptes sans achat). Sert à l'export.
+app.get("/admin/api/emails", admin, (req, res) => res.json(db.prepare(`
+  SELECT u.discord_id, u.username, u.email, u.email_verified, u.created_at, u.last_login,
+         (SELECT COUNT(*) FROM keys k WHERE k.discord_id=u.discord_id AND k.redeemed_at IS NOT NULL) AS purchases
+  FROM users u WHERE u.email IS NOT NULL ORDER BY u.created_at DESC LIMIT 5000`).all()));
+app.post("/admin/api/ban", admin, (req, res) => {
+  const { discord_id, banned=1 } = req.body ?? {};
+  db.prepare("UPDATE users SET banned=? WHERE discord_id=?").run(banned?1:0, discord_id);
+  if (banned) {
+    db.prepare("UPDATE keys SET revoked=1 WHERE discord_id=?").run(discord_id);
+    discord.safe(() => discord.removeRole(discord_id));
+    discord.safe(() => discord.dmUser(discord_id, "⛔ Ton acces PulseBoost a ete suspendu. Contacte le support si tu penses que c'est une erreur."));
+    discord.safe(() => discord.postLog(`🔨 <@${discord_id}> banni + cles revoquees par admin`));
+  }
+  alert("warn", `Utilisateur ${discord_id} ${banned?"banni + cles revoquees":"debanni"} par admin`, discord_id);
+  audit(req, banned ? "ban_user" : "unban_user", discord_id);
+  res.json({ ok: true });
+});
+app.get("/admin/api/logs", admin, (req, res) => res.json(db.prepare("SELECT * FROM logs ORDER BY id DESC LIMIT 300").all()));
+app.get("/admin/api/alerts", admin, (req, res) => res.json(db.prepare("SELECT * FROM alerts ORDER BY id DESC LIMIT 100").all()));
+app.post("/admin/api/alerts/resolve", admin, (req, res) => res.json({ ok: db.prepare("UPDATE alerts SET resolved=1 WHERE id=?").run(req.body.id).changes === 1 }));
+app.get("/admin/api/alerts/stream", admin, (req, res) => {
+  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+  res.write(": connecte\n\n"); sseClients.add(res);
+  req.on("close", () => sseClients.delete(res));
+});
+app.post("/admin/api/command", admin, (req, res) => {
+  const { discord_id, type, payload="" } = req.body ?? {};
+  db.prepare("INSERT INTO commands (discord_id,type,payload) VALUES (?,?,?)").run(discord_id, type, payload);
+  log("command", { discord_id: req.admin.id, detail: `${type} -> ${discord_id}` });
+  res.json({ queued: true });
+});
+app.get("/admin/api/flags", admin, (req, res) => res.json(db.prepare("SELECT * FROM flags").all()));
+app.post("/admin/api/flags", admin, (req, res) => {
+  const { name, enabled, scope } = req.body ?? {};
+  db.prepare("UPDATE flags SET enabled=?, scope=COALESCE(?,scope) WHERE name=?").run(enabled?1:0, scope ?? null, name);
+  res.json({ ok: true });
+});
+
+// Réglages (annonce in-app, version, lien de téléchargement)
+app.get("/admin/api/settings", admin, (req, res) => res.json({
+  announcement: getSetting("announcement"), latest_version: getSetting("latest_version"),
+  download_url: getSetting("download_url"), shop_url: getSetting("shop_url"),
+}));
+app.post("/admin/api/settings", admin, (req, res) => {
+  for (const k of ["announcement", "latest_version", "download_url", "shop_url"]) if (k in (req.body ?? {})) setSetting(k, req.body[k]);
+  res.json({ ok: true });
+});
+
+// Télécharger une sauvegarde complète de la base (copie cohérente).
+app.get("/admin/api/backup", admin, async (req, res) => {
+  const tmp = path.join(DATA_DIR, `dl-${Date.now()}.db`);
+  try {
+    await db.backup(tmp);
+    res.download(tmp, `pulseboost-${new Date().toISOString().slice(0, 10)}.db`, () => { try { fs.unlinkSync(tmp); } catch {} });
+  } catch (e) { console.error("[backup dl]", e.message); res.status(500).json({ error: "sauvegarde impossible" }); }
+});
+
+// --- TICKETS (support par MP) ---
+app.get("/admin/api/tickets", admin, (req, res) => res.json(db.prepare(`
+  SELECT t.*, u.avatar, u.email,
+    (SELECT plan FROM keys k WHERE k.discord_id=t.discord_id AND k.revoked=0 AND (k.expires_at IS NULL OR k.expires_at>datetime('now')) ORDER BY k.expires_at DESC LIMIT 1) AS plan,
+    (SELECT content FROM ticket_messages m WHERE m.ticket_id=t.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+    (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id=t.id) AS msg_count,
+    (SELECT COUNT(*) FROM ticket_messages m WHERE m.ticket_id=t.id AND m.author='user' AND (t.last_read_at IS NULL OR m.created_at > t.last_read_at)) AS unread
+  FROM tickets t LEFT JOIN users u ON u.discord_id=t.discord_id ORDER BY t.updated_at DESC LIMIT 500`).all()));
+
+app.get("/admin/api/ticket", admin, (req, res) => {
+  const t = db.prepare("SELECT * FROM tickets WHERE id=?").get(req.query.id);
+  if (!t) return res.status(404).json({ error: "introuvable" });
+  const messages = db.prepare("SELECT id,author,content,deleted,edited,original_content,created_at FROM ticket_messages WHERE ticket_id=? ORDER BY id").all(t.id);
+  db.prepare("UPDATE tickets SET last_read_at=datetime('now') WHERE id=?").run(t.id); // marquer lu
+  // Le bot "détecte" l'utilisateur -> on renvoie son profil pour proposer des actions.
+  const u = db.prepare("SELECT username,avatar,email,banned,created_at FROM users WHERE discord_id=?").get(t.discord_id);
+  const plan = db.prepare("SELECT plan FROM keys WHERE discord_id=? AND revoked=0 AND (expires_at IS NULL OR expires_at>datetime('now')) ORDER BY expires_at DESC LIMIT 1").get(t.discord_id)?.plan || null;
+  const devices = db.prepare("SELECT COUNT(*) c FROM devices WHERE discord_id=?").get(t.discord_id).c;
+  const blacklisted = !!db.prepare("SELECT 1 FROM blacklist WHERE discord_id=? LIMIT 1").get(t.discord_id);
+  res.json({ ticket: t, messages, account: { registered: !!u, banned: u?.banned === 1, email: u?.email || null, avatar: u?.avatar || null, plan, devices, blacklisted } });
+});
+
+// Ban / déban du SERVEUR Discord (via le bot effecteur).
+app.post("/admin/api/discord/ban", admin, async (req, res) => {
+  const { discord_id, unban } = req.body ?? {};
+  if (!discord_id) return res.status(400).json({ error: "discord_id requis" });
+  const r = await discord.safe(() => (unban ? discord.unbanMember(discord_id) : discord.banMember(discord_id)));
+  log("discord_ban", { discord_id: req.admin.id, detail: `${unban ? "unban" : "ban"} ${discord_id}` });
+  alert("warn", `${unban ? "Déban" : "Ban"} Discord de <@${discord_id}>`, discord_id);
+  res.json({ ok: true, sent: r !== null, configured: !!process.env.DISCORD_BOT_TOKEN });
+});
+
+// Blacklist COMPLET d'un compte : tous ses HWID + ban app + révocation des clés.
+app.post("/admin/api/blacklist_user", admin, (req, res) => {
+  const { discord_id, reason = "blacklist (compte)" } = req.body ?? {};
+  if (!discord_id) return res.status(400).json({ error: "discord_id requis" });
+  const hwids = db.prepare("SELECT hwid FROM devices WHERE discord_id=?").all(discord_id).map((r) => r.hwid);
+  const ins = db.prepare("INSERT OR REPLACE INTO blacklist (hwid,discord_id,reason) VALUES (?,?,?)");
+  for (const h of hwids) ins.run(h, discord_id, reason);
+  db.prepare("INSERT OR IGNORE INTO users (discord_id) VALUES (?)").run(discord_id);
+  db.prepare("UPDATE users SET banned=1 WHERE discord_id=?").run(discord_id);
+  db.prepare("UPDATE keys SET revoked=1 WHERE discord_id=?").run(discord_id);
+  discord.safe(() => discord.removeRole(discord_id));
+  alert("bad", `Compte <@${discord_id}> blacklisté (${hwids.length} HWID) + clés révoquées`, discord_id);
+  log("blacklist_user", { discord_id: req.admin.id, detail: `${discord_id} (${hwids.length} hwid)` });
+  audit(req, "blacklist_user", discord_id, `${hwids.length} HWID`);
+  res.json({ ok: true, hwids: hwids.length });
+});
+
+app.post("/admin/api/ticket/reply", admin, async (req, res) => {
+  const { id, message } = req.body ?? {};
+  const t = db.prepare("SELECT * FROM tickets WHERE id=?").get(id);
+  if (!t || !message) return res.status(400).json({ error: "ticket ou message manquant" });
+  const r = await discord.safe(() => discord.dmUser(t.discord_id, `💬 **Support PulseBoost** :\n${message}`));
+  db.prepare("INSERT INTO ticket_messages (ticket_id,author,content,discord_message_id) VALUES (?,?,?,?)").run(id, "admin", message, r?.id ?? null);
+  db.prepare("UPDATE tickets SET status='answered', updated_at=datetime('now'), last_read_at=datetime('now') WHERE id=?").run(id);
+  log("ticket_reply", { discord_id: req.admin.id, detail: `#${id} -> ${t.discord_id}` });
+  res.json({ ok: true, sent: r !== null });
+});
+
+app.post("/admin/api/ticket/close", admin, (req, res) => {
+  const { id, reopen } = req.body ?? {};
+  db.prepare("UPDATE tickets SET status=?, updated_at=datetime('now') WHERE id=?").run(reopen ? "open" : "closed", id);
+  res.json({ ok: true });
+});
+
+// Offrir Pro (cadeau) — crée une clé déjà liée + active
+app.post("/admin/api/grant", admin, (req, res) => {
+  const { discord_id, plan = "monthly" } = req.body ?? {};
+  if (!discord_id || PLAN_DAYS[plan] === undefined) return res.status(400).json({ error: "discord_id/plan invalide" });
+  db.prepare("INSERT OR IGNORE INTO users (discord_id) VALUES (?)").run(discord_id);
+  const { key } = grantPro(discord_id, plan, "cadeau admin");
+  log("grant", { discord_id: req.admin.id, detail: `${plan} -> ${discord_id}` });
+  audit(req, "grant_pro", discord_id, plan);
+  discord.safe(() => discord.dmUser(discord_id, `🎁 Tu as reçu **PulseBoost Pro ${PLAN_LABEL[plan]}** ! C'est déjà activé — relance l'app. Clé : \`${key}\``));
+  res.json({ ok: true, key });
+});
+
+// RGPD : effacer l'email d'un compte
+app.post("/admin/api/forget_email", admin, (req, res) => {
+  const r = db.prepare("UPDATE users SET email=NULL, email_verified=NULL WHERE discord_id=?").run(req.body?.discord_id);
+  log("forget_email", { discord_id: req.admin.id, detail: req.body?.discord_id });
+  res.json({ ok: r.changes === 1 });
+});
+
+// Diffusion : alerte in-app à TOUS les utilisateurs (ou DM)
+app.post("/admin/api/broadcast", admin, (req, res) => {
+  const { message, channel = "app" } = req.body ?? {};
+  if (!message) return res.status(400).json({ error: "message requis" });
+  const ids = db.prepare("SELECT discord_id FROM users WHERE banned=0").all().map((r) => r.discord_id);
+  if (channel === "dm") { for (const id of ids) discord.safe(() => discord.dmUser(id, message)); }
+  else { const ins = db.prepare("INSERT INTO commands (discord_id,type,payload) VALUES (?,?,?)"); for (const id of ids) ins.run(id, "alert", message); }
+  log("broadcast", { discord_id: req.admin.id, detail: `${channel} -> ${ids.length}` });
+  alert("info", `📢 Diffusion (${channel}) à ${ids.length} utilisateur(s)`);
+  res.json({ ok: true, count: ids.length });
+});
+
+// Le panel ordonne au bot d'envoyer un DM (personne ne tape ca dans Discord)
+app.post("/admin/api/dm", admin, async (req, res) => {
+  const { discord_id, message } = req.body ?? {};
+  const r = await discord.safe(() => discord.dmUser(discord_id, message));
+  log("discord_dm", { discord_id: req.admin.id, detail: `-> ${discord_id}` });
+  res.json({ sent: r !== null });
+});
+// Le panel ordonne au bot d'ajouter/retirer un role
+app.post("/admin/api/role", admin, async (req, res) => {
+  const { discord_id, action, role_id } = req.body ?? {};
+  const r = await discord.safe(() => action === "remove"
+    ? discord.removeRole(discord_id, role_id) : discord.addRole(discord_id, role_id));
+  log("discord_role", { discord_id: req.admin.id, detail: `${action} ${role_id||"PRO"} -> ${discord_id}` });
+  res.json({ ok: r !== null || true });
+});
+
+// Analytics agregees
+app.get("/admin/api/analytics", admin, (req, res) => {
+  const one = (q, ...p) => db.prepare(q).get(...p);
+  const all = (q, ...p) => db.prepare(q).all(...p);
+  const dau = one("SELECT COUNT(DISTINCT discord_id) c FROM events WHERE at > datetime('now','-1 day')").c;
+  const wau = one("SELECT COUNT(DISTINCT discord_id) c FROM events WHERE at > datetime('now','-7 day')").c;
+  const totalUsers = one("SELECT COUNT(*) c FROM users").c;
+  const proUsers = one(`SELECT COUNT(DISTINCT discord_id) c FROM keys WHERE revoked=0 AND discord_id IS NOT NULL AND (expires_at IS NULL OR expires_at>datetime('now'))`).c;
+  const newUsers = one("SELECT COUNT(*) c FROM users WHERE created_at > datetime('now','-7 day')").c;
+  const avgScore = one("SELECT ROUND(AVG(score)) s FROM snapshots").s;
+  const expiringSoon = one("SELECT COUNT(*) c FROM keys WHERE revoked=0 AND expires_at BETWEEN datetime('now') AND datetime('now','+7 day')").c;
+  const churned30 = one("SELECT COUNT(*) c FROM keys WHERE revoked=0 AND redeemed_at IS NOT NULL AND expires_at BETWEEN datetime('now','-30 day') AND datetime('now')").c;
+  const planMix = all("SELECT plan, COUNT(*) c FROM keys WHERE discord_id IS NOT NULL AND revoked=0 GROUP BY plan");
+  const topTweaks = all("SELECT detail, COUNT(*) c FROM events WHERE type='tweak_applied' GROUP BY detail ORDER BY c DESC LIMIT 10");
+  const redeemsByDay = all("SELECT date(redeemed_at) d, COUNT(*) c FROM keys WHERE redeemed_at > datetime('now','-14 day') GROUP BY d ORDER BY d");
+  const activeByDay = all("SELECT date(at) d, COUNT(DISTINCT discord_id) c FROM events WHERE at > datetime('now','-14 day') GROUP BY d ORDER BY d");
+  const conversion = totalUsers ? Math.round((proUsers/totalUsers)*100) : 0;
+  res.json({ dau, wau, totalUsers, proUsers, newUsers, avgScore, conversion, expiringSoon, churned30, planMix, topTweaks, redeemsByDay, activeByDay });
+});
+
+// Detail complet d'un client (analyse "qu'est-ce qui ne va pas")
+app.get("/admin/api/user", admin, (req, res) => {
+  const id = req.query.discord_id;
+  const user = db.prepare("SELECT * FROM users WHERE discord_id=?").get(id);
+  if (!user) return res.status(404).json({ error: "introuvable" });
+  const keys = db.prepare("SELECT * FROM keys WHERE discord_id=? ORDER BY created_at DESC").all(id);
+  const devices = db.prepare("SELECT * FROM devices WHERE discord_id=? ORDER BY last_seen DESC").all(id);
+  const snap = db.prepare("SELECT * FROM snapshots WHERE discord_id=?").get(id);
+  const events = db.prepare("SELECT type,detail,at FROM events WHERE discord_id=? ORDER BY id DESC LIMIT 60").all(id);
+  const feedback = db.prepare("SELECT reason,comment,at FROM feedback WHERE discord_id=? ORDER BY id DESC").all(id);
+  if (snap?.hw) try { snap.hw = JSON.parse(snap.hw); } catch {}
+
+  // Avatar Discord (CDN). Animé si le hash commence par a_, sinon défaut Discord.
+  let avatar;
+  try {
+    avatar = user.avatar
+      ? `https://cdn.discordapp.com/avatars/${id}/${user.avatar}.${user.avatar.startsWith("a_") ? "gif" : "png"}?size=128`
+      : `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(id) >> 22n) % 6n)}.png`;
+  } catch { avatar = "https://cdn.discordapp.com/embed/avatars/0.png"; }
+
+  // Connexions (logins) avec IP + adresses distinctes.
+  const connections = db.prepare("SELECT ip, at FROM logs WHERE discord_id=? AND type='login' ORDER BY id DESC LIMIT 50").all(id);
+  const ips = db.prepare("SELECT DISTINCT ip FROM logs WHERE discord_id=? AND ip IS NOT NULL ORDER BY id DESC LIMIT 30").all(id).map((r) => r.ip);
+
+  // Temps d'utilisation estimé : on regroupe les évènements en sessions
+  // (coupure > 30 min = nouvelle session) et on somme les durées.
+  const ts = db.prepare("SELECT at FROM events WHERE discord_id=? ORDER BY at ASC").all(id)
+    .map((r) => +new Date(String(r.at).replace(" ", "T") + "Z")).filter((n) => !isNaN(n));
+  const GAP = 30 * 60000, MIN = 2 * 60000;
+  let totalMs = 0, sessions = 0, start = null, last = null;
+  for (const t of ts) {
+    if (start === null) { start = last = t; sessions++; continue; }
+    if (t - last <= GAP) { last = t; }
+    else { totalMs += Math.max(last - start, MIN); start = last = t; sessions++; }
+  }
+  if (start !== null) totalMs += Math.max(last - start, MIN);
+  const agg = db.prepare(`SELECT COUNT(*) total, COUNT(DISTINCT date(at)) active_days,
+                                 MIN(at) first_at, MAX(at) last_at FROM events WHERE discord_id=?`).get(id);
+  const usage = {
+    total_ms: totalMs, sessions, total_events: agg.total, active_days: agg.active_days,
+    first_seen: agg.first_at, last_seen: agg.last_at, logins: connections.length,
+  };
+
+  res.json({ user, avatar, keys, devices, snapshot: snap, events, feedback, connections, ips, usage });
+});
+
+// Vue churn : qui expire bientot, qui a churn, raisons
+app.get("/admin/api/churn", admin, (req, res) => res.json({
+  expiring: db.prepare(`SELECT k.key,k.plan,k.expires_at,u.username,k.discord_id FROM keys k LEFT JOIN users u ON u.discord_id=k.discord_id
+    WHERE k.revoked=0 AND k.expires_at BETWEEN datetime('now') AND datetime('now','+7 day') ORDER BY k.expires_at`).all(),
+  churned: db.prepare(`SELECT k.key,k.plan,k.expires_at,u.username,k.discord_id FROM keys k LEFT JOIN users u ON u.discord_id=k.discord_id
+    WHERE k.revoked=0 AND k.redeemed_at IS NOT NULL AND k.expires_at < datetime('now') ORDER BY k.expires_at DESC LIMIT 100`).all(),
+  reasons: db.prepare("SELECT reason, COUNT(*) c FROM feedback GROUP BY reason ORDER BY c DESC").all(),
+  recent: db.prepare(`SELECT f.reason,f.comment,f.at,u.username FROM feedback f LEFT JOIN users u ON u.discord_id=f.discord_id ORDER BY f.id DESC LIMIT 50`).all(),
+}));
+
+app.get("/admin/api/blacklist", admin, (req, res) => res.json(db.prepare("SELECT * FROM blacklist ORDER BY at DESC LIMIT 300").all()));
+app.post("/admin/api/blacklist", admin, (req, res) => {
+  const { hwid, discord_id=null, reason="manuel" } = req.body ?? {};
+  db.prepare("INSERT OR REPLACE INTO blacklist (hwid,discord_id,reason) VALUES (?,?,?)").run(hwid, discord_id, reason);
+  if (discord_id) db.prepare("UPDATE keys SET revoked=1 WHERE discord_id=?").run(discord_id);
+  alert("bad", `HWID ${String(hwid).slice(0,12)}... blackliste manuellement`, discord_id);
+  res.json({ ok: true });
+});
+app.post("/admin/api/unblacklist", admin, (req, res) =>
+  res.json({ removed: db.prepare("DELETE FROM blacklist WHERE hwid=?").run(req.body.hwid).changes }));
+
+// Page panel : si pas connecté en admin -> on REDIRIGE vers le login Discord
+// (au lieu de renvoyer un JSON 401 dans le navigateur).
+app.get("/panel", (req, res) => {
+  if (!readAdmin(req)) return res.redirect("/admin/login");
+  res.sendFile(path.join(__dirname, "public", "panel.html"));
+});
+app.get("/", (req, res) => res.redirect("/admin/login"));
+
+// --- PERSISTANCE & SAUVEGARDES ---
+// Tout est en SQLite (DATA_DIR/pulseboost.db). Ces garde-fous garantissent que
+// rien n'est perdu au redémarrage, même brutal.
+const BACKUP_DIR = path.join(DATA_DIR, "backups");
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+// 1) Checkpoint périodique : fusionne le WAL dans le fichier .db principal
+//    (au cas où l'hébergeur ne conserverait que pulseboost.db et pas le -wal).
+setInterval(() => { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} }, 60 * 1000);
+
+// 2) Sauvegarde automatique de la base, rotation des 12 plus récentes.
+async function backupNow(tag = "auto") {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const dest = path.join(BACKUP_DIR, `pulseboost-${stamp}-${tag}.db`);
+    await db.backup(dest);
+    const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.endsWith(".db")).sort();
+    for (const old of files.slice(0, -12)) { try { fs.unlinkSync(path.join(BACKUP_DIR, old)); } catch {} }
+    return dest;
+  } catch (e) { console.error("[backup]", e.message); return null; }
+}
+setInterval(() => backupNow("auto"), 6 * 60 * 60 * 1000); // toutes les 6h
+backupNow("boot"); // une sauvegarde au démarrage
+
+// 3) Arrêt propre : checkpoint + fermeture -> aucune écriture perdue au redémarrage.
+let closing = false;
+function shutdown() {
+  if (closing) return; closing = true;
+  try { db.pragma("wal_checkpoint(TRUNCATE)"); db.close(); } catch {}
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
+// Écoute sur 0.0.0.0 (toutes interfaces) — requis par le Proxy Manager de l'hébergeur.
+app.listen(process.env.PORT ?? 8787, "0.0.0.0", () => console.log(`PulseBoost server pret - panel sur ${PUBLIC_URL}/panel`));
+
+// Support par MP (DM) : le bot écoute les messages privés -> tickets (lecture seule, aucune commande).
+startTickets({ db, discord, alert, log });

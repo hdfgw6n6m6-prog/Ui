@@ -1,0 +1,40 @@
+[package]
+name = "pulseboost"
+version = "0.1.0"
+description = "Optimisation PC pour gamers — sûre, mesurable, réversible"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.30"
+winreg = "0.52"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+dirs = "5"
+ed25519-dalek = "2"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_System_Power",
+  "Win32_System_Threading",
+  "Win32_System_Registry",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_Foundation",
+] }
+
+[profile.release]
+opt-level = "z"      # taille binaire minimale (< 50 MB visé)
+lto = true
+strip = true
+codegen-units = 1

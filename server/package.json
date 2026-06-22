@@ -1,0 +1,19 @@
+{
+  "name": "pulseboost-server",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "keygen": "node keygen.js",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "better-sqlite3": "^11.0.0",
+    "ws": "^8.18.0"
+  }
+}

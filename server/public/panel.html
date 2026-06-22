@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PulseBoost — Console admin</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --surface:#ffffff; --accent:#0071e3; --accent-press:#0077ed; --accent-soft:rgba(0,113,227,.1);
+    --blue:#0a84ff; --cyan:#0a99b8;
+    --ok:#34c759; --warn:#ff9500; --bad:#ff3b30; --pink:#ff2d55;
+    --txt:#1d1d1f; --txt-2:#6e6e73; --txt-3:#a1a1a6;
+    --glass:rgba(255,255,255,.72); --hair:rgba(0,0,0,.08); --hair-2:rgba(0,0,0,.06); --fill:rgba(0,0,0,.04); --fill-2:rgba(0,0,0,.07);
+    --r:18px; --r-sm:12px; --r-xs:10px;
+    --blur:saturate(180%) blur(20px);
+    --shadow:0 4px 24px rgba(0,0,0,.06); --shadow-2:0 1px 3px rgba(0,0,0,.08);
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Inter","Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+  h1{font-size:22px;font-weight:700;letter-spacing:-.02em}
+  h2{font-size:16px;font-weight:600;letter-spacing:-.02em}
+  h3{font-size:11px;color:var(--txt-3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px;padding:0 10px}
+  .mono,code{font-family:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace}
+  .muted{color:var(--txt-2)} .tiny{font-size:11.5px}
+  a{color:var(--accent);text-decoration:none}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.18);border-radius:10px;border:2px solid transparent;background-clip:content-box}
+
+  .wrap{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+  .rail{padding:18px 14px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;height:100vh;
+    background:var(--glass);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-right:1px solid var(--hair)}
+  .brand{display:flex;align-items:center;gap:11px;padding:8px 10px 16px;font-weight:700;font-size:19px;letter-spacing:-.02em;color:var(--txt)}
+  .brand .glow{width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px rgba(0,113,227,.6);animation:pulse 2.6s ease-in-out infinite}
+  .brand small{display:block;font:600 9.5px/1 -apple-system;color:var(--txt-3);letter-spacing:.12em;text-transform:uppercase;margin-top:4px}
+  @keyframes pulse{50%{opacity:.55}}
+  .nav{display:flex;align-items:center;gap:12px;text-align:left;background:none;border:none;color:var(--txt);font:inherit;font-size:14px;font-weight:500;
+    padding:9px 12px;border-radius:11px;cursor:pointer;transition:.16s cubic-bezier(.2,.8,.2,1);width:100%;position:relative}
+  .nav svg{width:18px;height:18px;flex:0 0 auto;color:var(--accent);opacity:.95}
+  .nav:hover{background:var(--fill)}
+  .nav.on{background:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(0,113,227,.32)}
+  .nav.on svg{color:#fff;opacity:1}
+  .nav .badge{margin-left:auto;font:600 10px/1 "SF Mono";background:var(--bad);color:#fff;padding:3px 7px;border-radius:20px;min-width:18px;text-align:center}
+  .nav.on .badge{background:#fff;color:var(--accent)}
+  .rail-foot{margin-top:auto;display:grid;gap:8px;padding-top:10px}
+  .me{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:13px;background:var(--surface);border:1px solid var(--hair);font-size:12px;box-shadow:var(--shadow-2)}
+  .me .ava{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#5ac8fa);display:grid;place-items:center;font-weight:700;color:#fff;flex:0 0 auto}
+  .me b{color:var(--txt)} .logout{display:flex;align-items:center;gap:9px;color:var(--txt-2);font-size:12.5px;padding:9px 11px;border-radius:13px;border:1px solid var(--hair);background:var(--surface)}
+  .logout:hover{color:var(--txt);background:var(--fill)}
+
+  main{overflow:auto}
+  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:14px;padding:14px 26px;
+    background:rgba(245,245,247,.78);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);border-bottom:1px solid var(--hair)}
+  .topbar .ttl{min-width:160px}.topbar .ttl h1{color:var(--txt)}.topbar .ttl .sub{color:var(--txt-2);font-size:12px;margin-top:2px}
+  .search{flex:1;max-width:440px;position:relative}
+  .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--txt-3)}
+  .search input{width:100%;padding:10px 14px 10px 38px;border-radius:980px;background:var(--surface);border:1px solid var(--hair);color:var(--txt);font:inherit}
+  .search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(0,113,227,.15)}
+  .live{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:#248a3d}
+  .live i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px rgba(52,199,89,.7)}
+  .content{padding:24px 26px 52px;max-width:1280px;margin:0 auto}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(184px,1fr));gap:14px;margin-bottom:20px}
+  .kpi{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);padding:18px 20px;position:relative;overflow:hidden;box-shadow:var(--shadow)}
+  .kpi .ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:11px}
+  .kpi .ic svg{width:18px;height:18px}
+  .kpi b{font-family:"SF Mono","JetBrains Mono";font-size:28px;font-weight:600;display:block;line-height:1.05;letter-spacing:-.02em;color:var(--txt)}
+  .kpi span{color:var(--txt-2);font-size:12.5px}
+  .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
+  @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:var(--r);padding:22px;margin-bottom:18px;box-shadow:var(--shadow)}
+  .card h2{color:var(--txt)}
+  .card-h{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--hair-2);white-space:nowrap}
+  th{color:var(--txt-2);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  td.mono{font-size:12px;color:var(--txt)} tbody tr{transition:background .14s} tbody tr:hover{background:var(--fill)}
+  .tscroll{overflow-x:auto;border-radius:var(--r-sm)}
+
+  .btn{font:inherit;font-weight:500;border:1px solid var(--hair);border-radius:980px;padding:8px 16px;cursor:pointer;color:var(--txt);background:var(--surface);
+    display:inline-flex;align-items:center;gap:7px;transition:.16s cubic-bezier(.2,.8,.2,1)}
+  .btn:hover{background:var(--fill)}.btn:active{transform:scale(.97)}
+  .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--accent);border-color:transparent;color:#fff;font-weight:600;box-shadow:0 4px 14px rgba(0,113,227,.3)}
+  .btn.primary:hover{background:var(--accent-press)}
+  .btn.bad{background:rgba(255,59,48,.1);color:var(--bad);border-color:rgba(255,59,48,.25)}.btn.bad:hover{background:rgba(255,59,48,.16)}
+  .btn.ok{background:rgba(52,199,89,.12);color:#248a3d;border-color:rgba(52,199,89,.3)}
+  .btn.sm{padding:6px 12px;font-size:12px}
+  input,select,textarea{font:inherit;background:var(--surface);border:1px solid var(--hair);color:var(--txt);border-radius:11px;padding:9px 12px}
+  input::placeholder,textarea::placeholder{color:var(--txt-3)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(0,113,227,.15)}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  /* iOS toggle (flags) */
+  #f-rows input[type=checkbox]{appearance:none;-webkit-appearance:none;width:50px;height:30px;border-radius:980px;background:rgba(0,0,0,.16);border:none;position:relative;cursor:pointer;transition:.25s;flex:0 0 auto}
+  #f-rows input[type=checkbox]::after{content:"";position:absolute;top:2px;left:2px;width:26px;height:26px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25);transition:.25s cubic-bezier(.2,.8,.2,1)}
+  #f-rows input[type=checkbox]:checked{background:var(--ok)}
+  #f-rows input[type=checkbox]:checked::after{transform:translateX(20px)}
+  /* iOS segmented control (filtres) */
+  #m-filters,#tk-filters{display:inline-flex;gap:2px;padding:2px;background:rgba(0,0,0,.05);border-radius:10px;border:1px solid var(--hair-2)}
+  #m-filters .chip,#tk-filters .chip{border:none;background:transparent;border-radius:8px;padding:6px 14px;color:var(--txt-2);box-shadow:none}
+  #m-filters .chip.on,#tk-filters .chip.on{background:var(--surface);color:var(--txt);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .qa{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:12px}
+  .qa button{text-align:left;display:flex;gap:12px;align-items:center;padding:16px;border-radius:var(--r-sm);border:1px solid var(--hair);background:var(--surface);color:var(--txt);cursor:pointer;font:inherit;transition:.16s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow-2)}
+  .qa button:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow)}
+  .qa .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);flex:0 0 auto}
+  .qa b{display:block;font-weight:600} .qa small{color:var(--txt-2)}
+
+  .pill{font-size:11px;font-weight:600;padding:3px 10px;border-radius:980px;display:inline-block;white-space:nowrap}
+  .pill.info{background:rgba(10,153,184,.14);color:#0a7a8f} .pill.warn{background:rgba(255,149,0,.16);color:#b35e00}
+  .pill.bad{background:rgba(255,59,48,.14);color:#c1241b} .pill.ok{background:rgba(52,199,89,.16);color:#248a3d}
+  .pill.muted{background:var(--fill);color:var(--txt-2)}
+  .chip{font:inherit;font-weight:500;padding:7px 15px;border-radius:980px;border:1px solid var(--hair);background:var(--surface);color:var(--txt-2);cursor:pointer;transition:.16s}
+  .chip.on{color:#fff;background:var(--accent);border-color:transparent}
+  .ava-img{border-radius:50%;flex:0 0 auto;object-fit:cover}
+  .alert{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 14px;border-radius:var(--r-sm);background:var(--fill);margin-bottom:7px;border-left:3px solid var(--txt-3)}
+  .alert.warn{border-color:var(--warn)}.alert.bad{border-color:var(--bad)}.alert.info{border-color:var(--accent)}
+  .empty{color:var(--txt-2);padding:24px 0;text-align:center}
+  .hide{display:none!important}
+
+  .bars{display:flex;flex-direction:column;gap:7px}
+  .bar-row{display:grid;grid-template-columns:156px 1fr 46px;align-items:center;gap:10px;font-size:12.5px}
+  .bar-track{height:16px;background:var(--fill);border-radius:980px;overflow:hidden}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#5ac8fa);border-radius:980px}
+  .spark{display:flex;align-items:flex-end;gap:3px;height:92px}
+  .spark .s{flex:1;background:linear-gradient(180deg,var(--accent),rgba(0,113,227,.25));border-radius:4px 4px 0 0;min-height:2px}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.28);display:grid;place-items:center;padding:22px;z-index:80;backdrop-filter:blur(6px)}
+  .modal-card{background:var(--surface);border:1px solid var(--hair);border-radius:26px;padding:26px;max-width:800px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 30px 80px rgba(0,0,0,.25)}
+  .modal-card h2{color:var(--txt)}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:7px 14px;font-size:13px;margin:10px 0 16px}
+  .kv span{color:var(--txt-2)} .kv b{font-weight:600;color:var(--txt)}
+  .timeline{font-size:12px;max-height:220px;overflow:auto;border:1px solid var(--hair-2);border-radius:var(--r-sm);padding:10px 14px}
+  .timeline div{padding:5px 0;border-bottom:1px solid var(--hair-2)} .timeline div:last-child{border:0}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.92);backdrop-filter:var(--blur);border:1px solid var(--hair);border-radius:980px;padding:12px 22px;box-shadow:0 14px 44px rgba(0,0,0,.18);z-index:99;display:flex;gap:10px;align-items:center;max-width:80vw;font-weight:500;color:var(--txt)}
+  .toast.bad{border-color:rgba(255,59,48,.5)} .toast.ok{border-color:rgba(52,199,89,.5)}
+
+  .convo{display:flex;flex-direction:column;gap:8px;max-height:48vh;overflow:auto;padding:6px 2px;margin:10px 0}
+  .msg{max-width:78%;padding:10px 14px;border-radius:20px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .msg .who{font-size:10px;text-transform:uppercase;letter-spacing:.05em;opacity:.7;margin-bottom:3px}
+  .msg.user{align-self:flex-start;background:#e9e9eb;color:var(--txt);border-bottom-left-radius:6px}
+  .msg.admin{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:6px}
+  .msg.del{opacity:.55}.msg.del .body{text-decoration:line-through}
+  .msg .meta{font-size:10px;opacity:.6;margin-top:4px}
+  .reply{display:flex;gap:9px;margin-top:6px}
+  .reply textarea{flex:1;min-height:48px;resize:vertical;border-radius:16px}
+
+  /* ---- ANIMATIONS (douces, façon Apple) ---- */
+  section.enter>*{animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+  section.enter>*:nth-child(1){animation-delay:.02s}section.enter>*:nth-child(2){animation-delay:.08s}
+  section.enter>*:nth-child(3){animation-delay:.14s}section.enter>*:nth-child(n+4){animation-delay:.2s}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .card{transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,border-color .3s}
+  .card:hover{transform:translateY(-2px);box-shadow:0 16px 44px rgba(0,0,0,.1)}
+  .kpi{transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s}.kpi:hover{transform:translateY(-3px);box-shadow:0 14px 36px rgba(0,0,0,.1)}
+  .nav{transition:background .16s,color .16s,transform .14s}
+  tbody tr{animation:rowin .35s ease both}@keyframes rowin{from{opacity:0}to{opacity:1}}
+  .toast{animation:tin .42s cubic-bezier(.2,.8,.2,1)}@keyframes tin{from{opacity:0;transform:translateX(-50%) translateY(16px) scale(.95)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+  .modal-card{animation:min .4s cubic-bezier(.2,.8,.2,1)}@keyframes min{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:none}}
+  .btn.primary{transition:background .16s,transform .12s,box-shadow .2s}.btn.primary:hover{transform:translateY(-1px)}.btn.primary:active{transform:scale(.97)}
+
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.card:hover,.kpi:hover,.btn.primary:hover{transform:none!important}}
+  @media(max-width:860px){
+    .wrap{grid-template-columns:1fr}
+    .rail{flex-direction:row;height:auto;position:static;overflow-x:auto;border-right:none;border-bottom:1px solid var(--hair);align-items:center}
+    h3{display:none}.brand{padding:0 10px 0 0}.nav span{display:none}.nav{width:auto}.rail-foot{display:none}
+    .grid2{grid-template-columns:1fr}.search{display:none}
+  }
+
+  /* ===== FOND ANIMÉ "DESIGNER" (mesh shader) + SURFACES VITRÉES ===== */
+  body{background:#e9eef6}
+  body::before{display:none} /* ancien aurora -> remplacé par .bg */
+  .bg{position:fixed;inset:0;z-index:-2;overflow:hidden;background:linear-gradient(140deg,#eef2f8,#e6ecf6)}
+  .bg span{position:absolute;border-radius:50%;filter:blur(80px);opacity:.6;will-change:transform}
+  .bg span:nth-child(1){width:58vw;height:58vw;left:-10vw;top:-14vw;background:hsl(203,100%,62%);animation:bm1 26s ease-in-out infinite alternate}
+  .bg span:nth-child(2){width:50vw;height:50vw;right:-12vw;top:-8vw;background:hsl(264,100%,61%);animation:bm2 31s ease-in-out infinite alternate}
+  .bg span:nth-child(3){width:54vw;height:54vw;right:-4vw;bottom:-18vw;background:hsl(158,99%,59%);animation:bm3 28s ease-in-out infinite alternate}
+  .bg span:nth-child(4){width:48vw;height:48vw;left:4vw;bottom:-14vw;background:hsl(255,100%,72%);animation:bm4 34s ease-in-out infinite alternate}
+  @keyframes bm1{to{transform:translate(24vw,16vh) scale(1.25) rotate(40deg)}}
+  @keyframes bm2{to{transform:translate(-20vw,22vh) scale(1.15) rotate(-30deg)}}
+  @keyframes bm3{to{transform:translate(-24vw,-14vh) scale(1.3) rotate(25deg)}}
+  @keyframes bm4{to{transform:translate(22vw,-18vh) scale(1.2) rotate(-40deg)}}
+
+  /* Surfaces "vitre" : le fond coloré transparaît derrière le verre dépoli */
+  .rail{background:rgba(255,255,255,.5)}
+  .topbar{background:rgba(255,255,255,.46)}
+  .card,.kpi{background:rgba(255,255,255,.58);border-color:rgba(255,255,255,.55);backdrop-filter:saturate(180%) blur(30px);-webkit-backdrop-filter:saturate(180%) blur(30px)}
+  .modal-card{background:rgba(255,255,255,.74);border-color:rgba(255,255,255,.6)}
+  .qa button,.me,.logout,.search input,.btn,input,select,textarea{background:rgba(255,255,255,.52);backdrop-filter:saturate(150%) blur(14px);-webkit-backdrop-filter:saturate(150%) blur(14px)}
+  .btn.primary{background:var(--accent)} /* le bouton bleu reste plein */
+  .toast{background:rgba(255,255,255,.8)}
+  .alert{background:rgba(255,255,255,.4)}
+  @media(prefers-reduced-motion:reduce){.bg span{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="liquid-glass" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05 0.05" numOctaves="1" seed="1" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="blur"/>
+    <feDisplacementMap in="SourceGraphic" in2="blur" scale="60" xChannelSelector="R" yChannelSelector="B"/>
+  </filter>
+</defs></svg>
+<div class="wrap">
+  <nav class="rail">
+    <div class="brand"><span class="glow"></span><div>PulseBoost<small>Console admin</small></div></div>
+    <h3>Pilotage</h3>
+    <button class="nav on" data-tab="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Tableau de bord</span></button>
+    <button class="nav" data-tab="analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l3-4 3 2 4-6"/></svg><span>Analytics</span></button>
+    <button class="nav" data-tab="churn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v6h-6"/></svg><span>Churn</span></button>
+    <h3>Licences</h3>
+    <button class="nav" data-tab="keys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 20 3l1 1-2 2 1 1-2 2-1-1-2 2"/></svg><span>Clés</span></button>
+    <button class="nav" data-tab="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg><span>Utilisateurs app</span></button>
+    <button class="nav" data-tab="members"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Membres Discord</span></button>
+    <h3>Support</h3>
+    <button class="nav" data-tab="tickets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.9-.9L3 20l1.3-3.1A8.4 8.4 0 1 1 21 11.5z"/></svg><span>Tickets</span></button>
+    <h3>Sécurité</h3>
+    <button class="nav" data-tab="blacklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span>Blacklist</span></button>
+    <button class="nav" data-tab="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg><span>Logs</span></button>
+    <h3>Configuration</h3>
+    <button class="nav" data-tab="flags"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V4h12l-2 4 2 4H4"/></svg><span>Features</span></button>
+    <button class="nav" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 4.6 7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V3a2 2 0 0 1 4 0v.1A1.6 1.6 0 0 0 17 4.6l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg><span>Réglages</span></button>
+    <div class="rail-foot">
+      <div class="me"><span class="ava">A</span><div><b>Administrateur</b><div class="muted tiny">connecté</div></div></div>
+      <a class="logout" href="/admin/logout"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>Déconnexion</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="topbar">
+      <div class="ttl"><h1 id="ptitle">Tableau de bord</h1><div class="sub" id="psub">Vue d'ensemble en temps réel</div></div>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input id="search" placeholder="Rechercher dans cet onglet…" autocomplete="off"></div>
+      <div class="live"><i></i>temps réel</div>
+    </div>
+    <div class="content">
+      <!-- DASH -->
+      <section id="dash">
+        <div class="kpis">
+          <div class="kpi"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><b id="s-users">—</b><span>Comptes app</span></div>
+          <div class="kpi"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.5 2.3 7.1L12 16.8 5.7 21l2.3-7.1-6-4.5h7.6z"/></svg></div><b id="s-active">—</b><span>Abonnés Pro actifs</span></div>
+          <div class="kpi"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 20 3l1 1-2 2 1 1-2 2-1-1-2 2"/></svg></div><b id="s-keys">—</b><span>Clés générées</span></div>
+          <div class="kpi"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></div><b id="s-alerts">—</b><span>Alertes ouvertes</span></div>
+        </div>
+        <div class="card"><h2 style="margin-bottom:14px">Actions rapides</h2>
+          <div class="qa">
+            <button onclick="quickGen()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.5 12.5 20 3l1 1-2 2 1 1-2 2-1-1-2 2"/></svg></span><span><b>Générer une clé</b><small>création express</small></span></button>
+            <button onclick="goTab('keys')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><span><b>Gérer les clés</b><small>liste & révocation</small></span></button>
+            <button onclick="quickAnnounce()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 13v-2zM11.6 16.8A3 3 0 0 1 6 16v-3"/></svg></span><span><b>Publier une annonce</b><small>bandeau in-app</small></span></button>
+            <button onclick="quickBroadcast()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></span><span><b>Diffuser un message</b><small>à tous les comptes</small></span></button>
+            <button onclick="goTab('members')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span><b>Membres Discord</b><small>tout le serveur</small></span></button>
+            <button onclick="loadStats();loadAlerts();toast('Rafraîchi')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></span><span><b>Rafraîchir</b><small>stats & alertes</small></span></button>
+          </div>
+        </div>
+        <div class="card"><div class="card-h"><h2>Alertes en temps réel</h2></div><div id="alerts"><div class="empty">Chargement…</div></div></div>
+      </section>
+
+      <!-- ANALYTICS -->
+      <section id="analytics" class="hide">
+        <div class="kpis">
+          <div class="kpi"><b id="a-dau">—</b><span>Actifs 24h</span></div>
+          <div class="kpi"><b id="a-wau">—</b><span>Actifs 7j</span></div>
+          <div class="kpi"><b id="a-new">—</b><span>Nouveaux 7j</span></div>
+          <div class="kpi"><b id="a-conv">—</b><span>Conversion Pro</span></div>
+          <div class="kpi"><b id="a-score">—</b><span>Score moyen PC</span></div>
+          <div class="kpi"><b id="a-churn">—</b><span>Churn 30j</span></div>
+        </div>
+        <div class="grid2">
+          <div class="card"><h2>Activité (14 jours)</h2><div id="chart-active"></div></div>
+          <div class="card"><h2>Activations / jour</h2><div id="chart-redeem"></div></div>
+        </div>
+        <div class="grid2">
+          <div class="card"><h2>Optimisations populaires</h2><div id="top-tweaks"></div></div>
+          <div class="card"><h2>Répartition des plans</h2><div id="plan-mix"></div></div>
+        </div>
+      </section>
+
+      <!-- CHURN -->
+      <section id="churn" class="hide">
+        <div class="card"><h2>Raisons de désabonnement</h2><div id="churn-reasons"></div></div>
+        <div class="grid2">
+          <div class="card"><h2>Expire &lt; 7 jours</h2><div class="tscroll"><table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expire</th><th></th></tr></thead><tbody id="churn-expiring"></tbody></table></div></div>
+          <div class="card"><h2>Déjà churn</h2><div class="tscroll"><table><thead><tr><th>Utilisateur</th><th>Plan</th><th>Expiré</th><th></th></tr></thead><tbody id="churn-churned"></tbody></table></div></div>
+        </div>
+        <div class="card"><h2>Retours récents</h2><div id="churn-recent"></div></div>
+      </section>
+
+      <!-- KEYS -->
+      <section id="keys" class="hide">
+        <div class="card"><h2 style="margin-bottom:12px">Générer des clés</h2>
+          <div class="row">
+            <select id="k-plan"><option value="weekly">Hebdo (7j)</option><option value="monthly" selected>Mensuel (30j)</option><option value="quarterly">Trimestriel (90j)</option><option value="lifetime">Lifetime</option></select>
+            <input id="k-days" type="number" placeholder="jours (option)" min="1" style="width:130px"/>
+            <input id="k-qty" type="number" value="1" min="1" max="100" style="width:74px" title="quantité"/>
+            <input id="k-dm" placeholder="DM à (ID Discord)" style="width:180px"/>
+            <input id="k-note" placeholder="note" style="flex:1;min-width:120px"/>
+            <button class="btn primary" id="b-genkey">Générer</button>
+          </div>
+          <div id="k-out" class="mono muted" style="margin-top:10px"></div>
+        </div>
+        <div class="card"><div class="card-h"><h2>Toutes les clés</h2>
+          <button class="btn sm" id="b-copyfree">Copier les clés libres</button></div>
+          <div class="tscroll"><table><thead><tr><th>Clé</th><th>Plan</th><th>Compte</th><th>Expire</th><th>État</th><th></th></tr></thead><tbody id="k-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- USERS -->
+      <section id="users" class="hide">
+        <div class="card"><div class="card-h"><h2>Utilisateurs de l'app</h2>
+          <button class="btn sm" id="b-export">Exporter emails (CSV)</button></div>
+          <div class="tscroll"><table><thead><tr><th>Discord</th><th>ID</th><th>Plan</th><th>App.</th><th>Dernier login</th><th>Actions</th></tr></thead><tbody id="u-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- MEMBERS -->
+      <section id="members" class="hide">
+        <div class="card"><div class="card-h">
+          <h2>Membres du serveur Discord <span class="pill muted" id="m-count">—</span></h2>
+          <button class="btn sm" id="b-mrefresh">Rafraîchir</button></div>
+          <div class="row" id="m-filters" style="margin:4px 0 6px">
+            <button class="chip on" data-f="all">Tous</button>
+            <button class="chip" data-f="registered">Inscrits app</button>
+            <button class="chip" data-f="pro">Pro</button>
+            <button class="chip" data-f="unregistered">Hors app</button>
+          </div>
+          <div id="m-note" class="muted tiny" style="margin-bottom:6px"></div>
+          <div class="tscroll"><table><thead><tr><th>Membre</th><th>ID</th><th>A rejoint</th><th>Statut</th><th>Actions</th></tr></thead><tbody id="m-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- TICKETS -->
+      <section id="tickets" class="hide">
+        <div class="card"><div class="card-h"><h2>Tickets de support <span class="pill muted" id="tk-count">—</span></h2>
+          <div class="row" style="margin:0"><button class="btn sm" id="b-tkrefresh">Rafraîchir</button></div></div>
+          <div class="row" id="tk-filters" style="margin:4px 0 8px">
+            <button class="chip on" data-f="open">Ouverts</button>
+            <button class="chip" data-f="all">Tous</button>
+            <button class="chip" data-f="answered">Répondus</button>
+            <button class="chip" data-f="closed">Fermés</button>
+          </div>
+          <p class="muted tiny" id="tk-note" style="margin-bottom:6px"></p>
+          <div class="tscroll"><table><thead><tr><th>Utilisateur</th><th>Statut</th><th>Dernier message</th><th>Msgs</th><th>Maj</th><th></th></tr></thead><tbody id="tk-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- BLACKLIST -->
+      <section id="blacklist" class="hide">
+        <div class="card"><h2>Blacklist anti-crack</h2>
+          <p class="muted tiny" style="margin:6px 0 14px">HWID bloqués (falsification ou ajout manuel). Refusé hors-ligne ET en ligne ; clés du compte révoquées.</p>
+          <div class="row" style="margin-bottom:8px"><input id="bl-hwid" placeholder="HWID à bloquer" style="flex:1;min-width:200px"/><input id="bl-reason" placeholder="raison"/><button class="btn bad" id="b-bladd">Blacklister</button></div>
+          <div class="tscroll"><table><thead><tr><th>HWID</th><th>Compte</th><th>Raison</th><th>Quand</th><th></th></tr></thead><tbody id="bl-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- LOGS -->
+      <section id="logs" class="hide">
+        <div class="card"><div class="card-h"><h2>Journal complet</h2><button class="btn sm" id="b-logs">Rafraîchir</button></div>
+          <div class="tscroll"><table><thead><tr><th>Quand</th><th>Type</th><th>Discord</th><th>Détail</th><th>IP</th></tr></thead><tbody id="l-rows"></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- FLAGS -->
+      <section id="flags" class="hide">
+        <div class="card"><h2>Feature flags</h2>
+          <p class="muted tiny" style="margin:6px 0 14px">Active/désactive des modules à distance et change leur portée. Appliqué au prochain heartbeat.</p>
+          <table><thead><tr><th>Module</th><th>Actif</th><th>Portée</th></tr></thead><tbody id="f-rows"></tbody></table>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="settings" class="hide">
+        <div class="card"><h2>Annonce dans l'app</h2>
+          <p class="muted tiny" style="margin:6px 0 10px">Bandeau affiché à tous les utilisateurs (vide = aucun).</p>
+          <textarea id="set-announce" rows="2" style="width:100%;resize:vertical" placeholder="Ex : -30% ce week-end !"></textarea>
+          <div class="row" style="margin-top:10px"><input id="set-version" placeholder="Dernière version (1.2.0)" style="width:180px"/><input id="set-download" placeholder="URL de la mise à jour" style="flex:1;min-width:200px"/><button class="btn primary" id="b-savesettings">Enregistrer</button></div>
+        </div>
+        <div class="card"><h2>Diffusion</h2>
+          <p class="muted tiny" style="margin:6px 0 10px">Message à TOUS les comptes : in-app (alerte) ou DM Discord.</p>
+          <textarea id="bc-msg" rows="2" style="width:100%;resize:vertical" placeholder="Ton message…"></textarea>
+          <div class="row" style="margin-top:10px"><button class="btn" id="b-bcapp">Envoyer in-app à tous</button><button class="btn" id="b-bcdm">Envoyer en DM à tous</button></div>
+        </div>
+        <div class="card"><h2>Sauvegarde de la base</h2>
+          <p class="muted tiny" style="margin:6px 0 10px">Tout est enregistré en SQLite et conservé au redémarrage. Des sauvegardes automatiques sont faites toutes les 6h (les 12 dernières). Télécharge une copie pour la garder à l'abri.</p>
+          <button class="btn primary" id="b-backup">Télécharger une sauvegarde (.db)</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<div id="modal" class="modal hide"><div class="modal-card" id="modal-body"></div></div>
+
+<script>
+"use strict";
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>String(s??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let toastT; function toast(m,t=""){let e=$("toast");if(!e){e=document.createElement("div");e.id="toast";document.body.appendChild(e);}e.className="toast "+t;e.textContent=m;clearTimeout(toastT);toastT=setTimeout(()=>e.remove(),3400);}
+async function api(p,b){try{const r=await fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});if(r.status===401){location.href="/admin/login";return null;}const d=await r.json().catch(()=>null);if(!r.ok){toast((d&&d.error)||("Erreur "+r.status),"bad");return null;}return d;}catch(e){toast("Réseau indisponible","bad");return null;}}
+const dt=(v)=>v?new Date(String(v).replace(" ","T")+"Z").toLocaleString("fr-FR"):"—";
+const dday=(v)=>v?new Date(String(v).replace(" ","T")+"Z").toLocaleDateString("fr-FR"):"—";
+const fmtDur=(ms)=>{const m=Math.round((ms||0)/60000);if(m<1)return "< 1 min";const h=Math.floor(m/60);return h?`${h} h ${m%60} min`:`${m} min`;};
+const avatarUrl=(id,h,s=32)=>h?`https://cdn.discordapp.com/avatars/${id}/${esc(h)}.png?size=${s}`:"https://cdn.discordapp.com/embed/avatars/0.png";
+const onerr="this.src='https://cdn.discordapp.com/embed/avatars/0.png'";
+
+// navigation
+const TABS={
+  dash:["Tableau de bord","Vue d'ensemble en temps réel",null],
+  analytics:["Analytics","Acquisition, conversion, rétention",loadAnalytics],
+  churn:["Churn","Pourquoi les abonnés partent",loadChurn],
+  keys:["Clés","Génération et gestion des licences",loadKeys],
+  users:["Utilisateurs app","Comptes ayant utilisé l'application",loadUsers],
+  members:["Membres Discord","Tous les membres de ton serveur",loadMembers],
+  tickets:["Tickets","Support par message privé (DM)",loadTickets],
+  blacklist:["Blacklist","Postes (HWID) bloqués",loadBl],
+  logs:["Logs","Journal complet des évènements",loadLogs],
+  flags:["Features","Modules et portée gratuit/Pro",loadFlags],
+  settings:["Réglages","Annonce, mise à jour, diffusion",loadSettings],
+};
+function goTab(tab){const n=document.querySelector(`.nav[data-tab="${tab}"]`);if(n)n.click();}
+document.querySelectorAll(".nav").forEach((n)=>n.addEventListener("click",()=>{
+  const tab=n.dataset.tab;
+  document.querySelectorAll(".nav").forEach((x)=>x.classList.toggle("on",x===n));
+  Object.keys(TABS).forEach((t)=>$(t).classList.toggle("hide",t!==tab));
+  const sec=$(tab);sec.classList.remove("enter");void sec.offsetWidth;sec.classList.add("enter"); // rejoue l'animation d'entrée
+  const[ti,su,ld]=TABS[tab];$("ptitle").textContent=ti;$("psub").textContent=su;$("search").value="";applySearch();
+  if(ld)ld();
+}));
+// recherche globale : masque les lignes de tableau de l'onglet actif
+function applySearch(){const q=($("search").value||"").toLowerCase();const sec=document.querySelector("section:not(.hide)");if(!sec)return;
+  sec.querySelectorAll("tbody tr").forEach((tr)=>{tr.style.display=(!q||tr.textContent.toLowerCase().includes(q))?"":"none";});}
+$("search").addEventListener("input",applySearch);
+
+// graphiques
+function spark(el,data){data=data||[];const max=Math.max(1,...data.map(d=>d.c));el.innerHTML=data.length?`<div class="spark">${data.map(d=>`<div class="s" style="height:${Math.round(d.c/max*100)}%" title="${esc(d.d)}: ${d.c}"></div>`).join("")}</div><div class="muted tiny" style="margin-top:6px;display:flex;justify-content:space-between"><span>${esc(data[0]?.d||"")}</span><span>${esc(data.at(-1)?.d||"")}</span></div>`:'<p class="empty">Pas de données.</p>';}
+function bars(el,rows,label){rows=rows||[];const max=Math.max(1,...rows.map(r=>r.c));el.innerHTML=rows.length?`<div class="bars">${rows.map(r=>`<div class="bar-row"><span class="mono" title="${esc(label(r))}">${esc(label(r))}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.c/max*100)}%"></div></div><b>${r.c}</b></div>`).join("")}</div>`:'<p class="empty">Pas de données.</p>';}
+
+// dashboard
+async function loadStats(){const s=await api("/admin/api/stats");if(!s)return;$("s-users").textContent=s.users;$("s-active").textContent=s.active;$("s-keys").textContent=s.keys;$("s-alerts").textContent=s.alerts;
+  document.querySelector('.nav[data-tab="dash"]').querySelector(".badge")?.remove();
+  if(s.alerts>0){const n=document.querySelector('.nav[data-tab="dash"]');if(!n.querySelector(".badge")){const b=document.createElement("span");b.className="badge";b.textContent=s.alerts;n.appendChild(b);}}}
+async function loadAlerts(){const a=await api("/admin/api/alerts");if(a)renderAlerts(a);}
+function renderAlerts(list){$("alerts").innerHTML=list.length?list.map(a=>`<div class="alert ${esc(a.level)}"><span><span class="pill ${esc(a.level)}">${esc(a.level)}</span> ${esc(a.message)} <span class="muted">· ${dt(a.at)}</span></span>${a.resolved?'<span class="muted tiny">résolu</span>':`<button class="btn sm" onclick="resolveAlert(${a.id})">OK</button>`}</div>`).join(""):'<div class="empty">Aucune alerte.</div>';}
+async function resolveAlert(id){await api("/admin/api/alerts/resolve",{id});loadAlerts();loadStats();}
+
+// quick actions
+async function quickGen(){const plan=prompt("Plan ? weekly / monthly / quarterly / lifetime","monthly");if(!plan)return;const r=await api("/admin/api/keys",{plan:plan.trim(),qty:1});if(r){prompt("Clé générée (copie-la) :",r.keys[0]);loadStats();}}
+async function quickAnnounce(){const m=prompt("Annonce à afficher dans l'app (vide = effacer) :");if(m===null)return;await api("/admin/api/settings",{announcement:m});toast("Annonce mise à jour","ok");}
+async function quickBroadcast(){const m=prompt("Message à diffuser in-app à tous les comptes :");if(!m)return;const r=await api("/admin/api/broadcast",{message:m,channel:"app"});if(r)toast(`Diffusé à ${r.count} compte(s)`,"ok");}
+
+// analytics
+async function loadAnalytics(){const a=await api("/admin/api/analytics");if(!a)return;$("a-dau").textContent=a.dau;$("a-wau").textContent=a.wau;$("a-new").textContent=a.newUsers;$("a-conv").textContent=(a.conversion??0)+"%";$("a-score").textContent=a.avgScore??"—";$("a-churn").textContent=a.churned30;spark($("chart-active"),a.activeByDay);spark($("chart-redeem"),a.redeemsByDay);bars($("top-tweaks"),a.topTweaks,r=>r.detail||"?");bars($("plan-mix"),a.planMix,r=>r.plan);}
+
+// churn
+async function loadChurn(){const c=await api("/admin/api/churn");if(!c)return;bars($("churn-reasons"),c.reasons,r=>r.reason||"(vide)");
+  $("churn-expiring").innerHTML=c.expiring.length?c.expiring.map(x=>`<tr><td>${esc(x.username||x.discord_id)}</td><td>${esc(x.plan)}</td><td>${dt(x.expires_at)}</td><td><button class="btn sm" onclick="dm('${x.discord_id}')">relancer</button></td></tr>`).join(""):'<tr><td colspan="4" class="empty">Personne.</td></tr>';
+  $("churn-churned").innerHTML=c.churned.length?c.churned.map(x=>`<tr><td>${esc(x.username||x.discord_id)}</td><td>${esc(x.plan)}</td><td>${dt(x.expires_at)}</td><td><button class="btn sm" onclick="dm('${x.discord_id}')">offre</button></td></tr>`).join(""):'<tr><td colspan="4" class="empty">Aucun.</td></tr>';
+  $("churn-recent").innerHTML=c.recent.length?c.recent.map(r=>`<div class="alert info"><span><b>${esc(r.username||"?")}</b> — ${esc(r.reason)} ${r.comment?`· <span class="muted">${esc(r.comment)}</span>`:""}</span><span class="muted tiny">${dday(r.at)}</span></div>`).join(""):'<div class="empty">Aucun retour.</div>';}
+
+// keys
+let KEYS=[];
+async function loadKeys(){const k=await api("/admin/api/keys");KEYS=k||[];renderKeys();}
+function renderKeys(){$("k-rows").innerHTML=KEYS.length?KEYS.map(k=>{const st=k.revoked?'<span class="pill bad">révoquée</span>':k.discord_id?'<span class="pill ok">active</span>':'<span class="pill info">libre</span>';return `<tr><td class="mono">${esc(k.key)}</td><td>${esc(k.plan)}</td><td class="mono">${esc(k.discord_id||"—")}</td><td>${dday(k.expires_at)}</td><td>${st}</td><td>${k.revoked?"":`<button class="btn sm bad" onclick="revoke('${esc(k.key)}')">révoquer</button> <button class="btn sm" onclick="unbind('${esc(k.key)}')">délier</button>`}</td></tr>`;}).join(""):'<tr><td colspan="6" class="empty">Aucune clé.</td></tr>';applySearch();}
+async function genKeys(){const plan=$("k-plan").value;const fb={weekly:7,monthly:30,quarterly:90,lifetime:0}[plan];const days=plan==="lifetime"?0:(parseInt($("k-days").value,10)||fb);const r=await api("/admin/api/keys",{plan,days,qty:+$("k-qty").value,note:$("k-note").value||null,dm_to:$("k-dm").value.trim()||null});if(!r)return;$("k-out").textContent="Généré : "+r.keys.join("  ·  ");toast(`${r.keys.length} clé(s)`,"ok");loadKeys();loadStats();}
+async function revoke(key){if(!confirm("Révoquer "+key+" ?"))return;await api("/admin/api/revoke",{key});toast("Révoquée");loadKeys();}
+async function unbind(key){await api("/admin/api/unbind",{key});toast("Déliée");loadKeys();}
+function copyFree(){const free=KEYS.filter(k=>!k.revoked&&!k.discord_id).map(k=>k.key);if(!free.length){toast("Aucune clé libre");return;}navigator.clipboard?.writeText(free.join("\n"));toast(`${free.length} clé(s) copiée(s)`,"ok");}
+
+// users
+let USERS=[];
+async function loadUsers(){const u=await api("/admin/api/users");USERS=u||[];renderUsers();}
+function renderUsers(){$("u-rows").innerHTML=USERS.length?USERS.map(u=>`<tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(u.discord_id,u.avatar,32)}" width="24" height="24" onerror="${onerr}"/><span>${esc(u.username||"—")}${u.banned?' <span class="pill bad">banni</span>':''}${u.email?`<br><span class="mono muted tiny">${esc(u.email)}</span>`:''}</span></span></td><td class="mono">${esc(u.discord_id)}</td><td>${u.plan?`<span class="pill ok">${esc(u.plan)}</span>`:'<span class="muted">free</span>'}</td><td>${u.devices}</td><td>${dt(u.last_login)}</td><td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn sm" onclick="detail('${u.discord_id}')">analyse</button>${u.banned?`<button class="btn sm" onclick="ban('${u.discord_id}',0)">débannir</button>`:`<button class="btn sm bad" onclick="ban('${u.discord_id}',1)">bannir</button>`}<button class="btn sm" onclick="dm('${u.discord_id}')">DM</button><button class="btn sm" onclick="grant('${u.discord_id}')">Pro+</button></div></td></tr>`).join(""):'<tr><td colspan="6" class="empty">Aucun utilisateur.</td></tr>';applySearch();}
+async function ban(id,b){if(b&&!confirm("Bannir (révoque ses clés) ?"))return;await api("/admin/api/ban",{discord_id:id,banned:b});toast(b?"Banni":"Débanni");loadUsers();loadStats();}
+async function cmd(id,type,payload=""){await api("/admin/api/command",{discord_id:id,type,payload});toast("Commande envoyée");}
+function msg(id){const m=prompt("Alerte à afficher DANS l'app du client :");if(m)cmd(id,"alert",m);}
+async function dm(id){const m=prompt("Message DM Discord (via le bot effecteur) :");if(m){const r=await api("/admin/api/dm",{discord_id:id,message:m});if(r)toast(r.sent?"DM envoyé":"Bot non configuré","ok");}}
+async function role(id,action){await api("/admin/api/role",{discord_id:id,action});toast(action==="add"?"Rôle Pro +":"Rôle Pro −");loadMembers();}
+async function grant(id){const plan=prompt("Offrir quel plan ? weekly / monthly / quarterly / lifetime","monthly");if(!plan)return;const r=await api("/admin/api/grant",{discord_id:id,plan:plan.trim()});if(r){toast("Pro offert ("+r.key+")","ok");loadUsers();}}
+async function forgetEmail(id){if(!confirm("Effacer l'email (RGPD) ?"))return;await api("/admin/api/forget_email",{discord_id:id});toast("Email effacé");loadUsers();}
+async function exportEmails(){const rows=await api("/admin/api/emails");if(!rows)return;if(!rows.length){toast("Aucun email");return;}const head="discord_id,username,email,verified,achats,cree_le,dernier_login";const csv=[head].concat(rows.map(r=>[r.discord_id,(r.username||"").replace(/[",\n]/g," "),r.email,r.email_verified?1:0,r.purchases,r.created_at,r.last_login].map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(","))).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="pulseboost-emails.csv";a.click();URL.revokeObjectURL(a.href);toast(`${rows.length} email(s) exporté(s)`,"ok");}
+
+// members
+let MEMBERS=[],M_FILTER="all";
+async function loadMembers(){const d=await api("/admin/api/members");if(!d)return;MEMBERS=d.members||[];$("m-count").textContent=d.total+" membres";
+  $("m-note").textContent=d.configured?(d.total?"":"0 membre reçu — active l'intent « Server Members » (portail Discord → Bot → Privileged Intents)."):"⚠️ Bot Discord non configuré (DISCORD_BOT_TOKEN / DISCORD_GUILD_ID).";renderMembers();}
+function renderMembers(){let m=MEMBERS;if(M_FILTER==="registered")m=m.filter(x=>x.registered);else if(M_FILTER==="pro")m=m.filter(x=>x.pro||x.has_pro_role);else if(M_FILTER==="unregistered")m=m.filter(x=>!x.registered);
+  $("m-rows").innerHTML=m.length?m.map(x=>{const tags=[x.pro?'<span class="pill ok">Pro</span>':(x.has_pro_role?'<span class="pill info">rôle Pro</span>':""),x.registered?'<span class="pill muted">app</span>':""].filter(Boolean).join(" ")||'<span class="muted tiny">—</span>';
+    return `<tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(x.id,x.avatar,32)}" width="24" height="24" onerror="${onerr}"/><span>${esc(x.nick||x.username)}${x.email?`<br><span class="mono muted tiny">${esc(x.email)}</span>`:""}</span></span></td><td class="mono">${esc(x.id)}</td><td>${dday(x.joined_at)}</td><td>${tags}</td><td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn sm" onclick="dm('${x.id}')">DM</button><button class="btn sm" onclick="grant('${x.id}')">offrir Pro</button>${x.has_pro_role?`<button class="btn sm" onclick="role('${x.id}','remove')">rôle −</button>`:`<button class="btn sm" onclick="role('${x.id}','add')">rôle +</button>`}${x.registered?`<button class="btn sm" onclick="detail('${x.id}')">analyse</button>`:""}</div></td></tr>`;}).join(""):'<tr><td colspan="5" class="empty">Aucun membre.</td></tr>';applySearch();}
+document.querySelectorAll("#m-filters .chip").forEach(c=>c.addEventListener("click",()=>{document.querySelectorAll("#m-filters .chip").forEach(x=>x.classList.toggle("on",x===c));M_FILTER=c.dataset.f;renderMembers();}));
+
+// tickets
+let TICKETS=[],TK_FILTER="open";
+const stPill={open:'<span class="pill warn">ouvert</span>',answered:'<span class="pill info">répondu</span>',closed:'<span class="pill muted">fermé</span>'};
+async function loadTickets(){const t=await api("/admin/api/tickets");TICKETS=t||[];renderTickets();updateTicketBadge();}
+function renderTickets(){let t=TICKETS;if(TK_FILTER!=="all")t=t.filter(x=>x.status===TK_FILTER);
+  $("tk-count").textContent=TICKETS.length+" ticket(s)";$("tk-note").textContent=TICKETS.length?"":"Aucun ticket. Les utilisateurs ouvrent un ticket en envoyant un MP au bot.";
+  $("tk-rows").innerHTML=t.length?t.map(x=>`<tr><td><span class="row" style="gap:8px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(x.discord_id,x.avatar,32)}" width="24" height="24" onerror="${onerr}"/><span>${esc(x.username||x.discord_id)}${x.plan?` <span class="pill ok">${esc(x.plan)}</span>`:""}</span></span></td><td>${stPill[x.status]||esc(x.status)}${x.unread>0?` <span class="pill bad">${x.unread}</span>`:""}</td><td class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc((x.last_message||"").slice(0,80))}</td><td>${x.msg_count}</td><td>${dt(x.updated_at)}</td><td><button class="btn sm primary" onclick="openTicket(${x.id})">ouvrir</button></td></tr>`).join(""):'<tr><td colspan="6" class="empty">Aucun ticket.</td></tr>';applySearch();}
+function updateTicketBadge(){const tot=TICKETS.reduce((a,x)=>a+(x.unread||0),0);const n=document.querySelector('.nav[data-tab="tickets"]');n.querySelector(".badge")?.remove();if(tot>0){const b=document.createElement("span");b.className="badge";b.textContent=tot;n.appendChild(b);}}
+document.querySelectorAll("#tk-filters .chip").forEach(c=>c.addEventListener("click",()=>{document.querySelectorAll("#tk-filters .chip").forEach(x=>x.classList.toggle("on",x===c));TK_FILTER=c.dataset.f;renderTickets();}));
+async function openTicket(id){const d=await api("/admin/api/ticket?id="+id);if(!d)return;const t=d.ticket;const a=d.account||{};const uid=t.discord_id;
+  const convo=d.messages.map(m=>`<div class="msg ${m.author}${m.deleted?" del":""}"><div class="who">${m.author==="admin"?"toi (admin)":esc(t.username||"utilisateur")}</div><div class="body">${esc(m.content)}</div><div class="meta">${dt(m.created_at)}${m.deleted?" · supprimé":""}${m.edited?` · modifié${m.original_content?` (avant : ${esc(m.original_content).slice(0,60)})`:""}`:""}</div></div>`).join("")||'<div class="empty">aucun message</div>';
+  const tags=[a.plan?`<span class="pill ok">${esc(a.plan)}</span>`:'<span class="pill muted">free</span>',a.registered?'<span class="pill info">compte app</span>':'<span class="pill muted">jamais connecté</span>',a.banned?'<span class="pill bad">banni</span>':"",a.blacklisted?'<span class="pill bad">blacklisté</span>':""].filter(Boolean).join(" ");
+  $("modal-body").innerHTML=`<div class="card-h" style="align-items:flex-start"><div class="row" style="gap:12px;flex-wrap:nowrap"><img class="ava-img" src="${avatarUrl(uid,a.avatar,48)}" width="48" height="48" style="border-radius:14px" onerror="${onerr}"/><div><h2 style="margin:0">Ticket #${t.id} — ${esc(t.username||uid)}</h2><div class="mono muted tiny">ID ${esc(uid)} · ${stPill[t.status]||esc(t.status)}</div><div style="margin-top:5px">${tags}</div></div></div><button class="btn sm" onclick="closeModal()">fermer</button></div>
+  <div class="ticket-actions" style="display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 6px">
+    ${a.registered?`<button class="btn sm" onclick="detail('${uid}')">📊 Voir ses infos</button>`:""}
+    <button class="btn sm" onclick="grant('${uid}')">🎁 Offrir une clé</button>
+    <button class="btn sm" onclick="dm('${uid}')">✉️ DM</button>
+    ${a.banned?`<button class="btn sm" onclick="ban('${uid}',0);openTicket(${id})">Débannir (app)</button>`:`<button class="btn sm bad" onclick="ban('${uid}',1);openTicket(${id})">⛔ Bannir (app)</button>`}
+    <button class="btn sm bad" onclick="discordBan('${uid}',${id})">🔨 Bannir du Discord</button>
+    <button class="btn sm bad" onclick="blacklistUser('${uid}',${id})">🚫 Blacklist (${a.devices||0} HWID)</button>
+  </div>
+  <div class="convo" id="tk-convo">${convo}</div>
+  <div class="reply"><textarea id="tk-reply" placeholder="Ta réponse (envoyée en DM à l'utilisateur)…"></textarea></div>
+  <div class="row" style="margin-top:8px;justify-content:space-between"><button class="btn ${t.status==="closed"?"":"bad"}" onclick="closeTicket(${t.id},${t.status==="closed"?1:0})">${t.status==="closed"?"Rouvrir":"Fermer le ticket"}</button><button class="btn primary" onclick="replyTicket(${t.id})">Envoyer la réponse</button></div>`;
+  $("modal").classList.remove("hide");const c=$("tk-convo");c.scrollTop=c.scrollHeight;
+  TICKETS=TICKETS.map(x=>x.id===id?{...x,unread:0}:x);updateTicketBadge();}
+async function discordBan(uid,tid){if(!confirm("Bannir cet utilisateur du SERVEUR Discord ?"))return;const r=await api("/admin/api/discord/ban",{discord_id:uid});if(r)toast(r.sent?"Banni du Discord":"Bot non configuré / déjà banni","ok");if(tid)openTicket(tid);}
+async function blacklistUser(uid,tid){if(!confirm("Blacklist complet : bloque tous ses HWID, révoque ses clés et bannit le compte. Continuer ?"))return;const r=await api("/admin/api/blacklist_user",{discord_id:uid});if(r){toast(`Blacklisté (${r.hwids} HWID)`,"ok");if(tid)openTicket(tid);}}
+async function replyTicket(id){const m=$("tk-reply").value.trim();if(!m){toast("Message vide","bad");return;}const r=await api("/admin/api/ticket/reply",{id,message:m});if(r){toast(r.sent?"Réponse envoyée en DM":"Enregistré (bot non configuré ?)","ok");openTicket(id);loadTickets();}}
+async function closeTicket(id,reopen){await api("/admin/api/ticket/close",{id,reopen:!!reopen});toast(reopen?"Ticket rouvert":"Ticket fermé");closeModal();loadTickets();}
+
+// detail
+async function detail(id){const d=await api("/admin/api/user?discord_id="+encodeURIComponent(id));if(!d)return;const s=d.snapshot,hw=(s&&s.hw)||{},u=d.user,us=d.usage||{};const curPlan=(d.keys.find(k=>!k.revoked&&(!k.expires_at||new Date(k.expires_at)>new Date()))||{}).plan||"free";
+  $("modal-body").innerHTML=`<div class="card-h" style="align-items:flex-start"><div class="row" style="gap:14px;flex-wrap:nowrap"><img class="ava-img" src="${esc(d.avatar)}" width="64" height="64" style="border-radius:16px" onerror="${onerr}"/><div><h2 style="margin:0">${esc(u.username||id)} ${u.banned?'<span class="pill bad">banni</span>':''}</h2><div class="mono muted tiny">ID ${esc(id)}</div><div class="muted tiny">Vu depuis le ${dt(u.created_at)}</div></div></div><button class="btn sm" onclick="closeModal()">fermer</button></div>
+  <h3>Profil & utilisation</h3><div class="kv"><span>Email</span><b class="mono">${esc(u.email||"—")} ${u.email?(u.email_verified?'<span class="pill ok">vérifié</span>':'<span class="pill warn">non vérifié</span>'):""}</b><span>Plan actuel</span><b>${esc(curPlan)}</b><span>Temps d'utilisation</span><b>${fmtDur(us.total_ms)}</b><span>Sessions</span><b>${us.sessions??0}</b><span>Jours actifs</span><b>${us.active_days??0}</b><span>Connexions</span><b>${us.logins??0}</b><span>Évènements</span><b>${us.total_events??0}</b><span>Première activité</span><b>${dt(us.first_seen)}</b><span>Dernière activité</span><b>${dt(us.last_seen)}</b><span>Score PC</span><b>${s?.score??"—"}/100</b><span>CPU</span><b>${esc(hw.cpu?.name||"—")}</b><span>GPU</span><b>${esc(hw.gpu?.name||"—")}</b><span>RAM</span><b>${hw.ram?.total_gb?esc(hw.ram.total_gb)+" GB":"—"}</b></div>
+  <h3>Appareils (HWID) — ${d.devices.length}</h3><div class="tscroll"><table><thead><tr><th>HWID</th><th>Étiquette</th><th>Première vue</th><th>Dernière vue</th></tr></thead><tbody>${d.devices.map(v=>`<tr><td class="mono" title="${esc(v.hwid)}">${esc((v.hwid||"").slice(0,24))}…</td><td>${esc(v.label||"—")}</td><td>${dt(v.first_seen)}</td><td>${dt(v.last_seen)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">aucun</td></tr>'}</tbody></table></div>
+  <h3>Connexions & IP</h3><div class="muted tiny" style="margin-bottom:6px">IP : ${d.ips&&d.ips.length?d.ips.map(i=>`<span class="mono">${esc(i)}</span>`).join(", "):"—"}</div><div class="tscroll"><table><thead><tr><th>IP</th><th>Quand</th></tr></thead><tbody>${(d.connections||[]).map(c=>`<tr><td class="mono">${esc(c.ip||"—")}</td><td>${dt(c.at)}</td></tr>`).join("")||'<tr><td colspan="2" class="empty">aucune</td></tr>'}</tbody></table></div>
+  ${d.feedback.length?`<h3>Feedback churn</h3>${d.feedback.map(f=>`<div class="alert warn"><span>${esc(f.reason)} — ${esc(f.comment||"")}</span><span class="muted tiny">${dt(f.at)}</span></div>`).join("")}`:""}
+  <h3>Clés</h3><div class="tscroll"><table><thead><tr><th>Clé</th><th>Plan</th><th>Expire</th><th>État</th></tr></thead><tbody>${d.keys.map(k=>`<tr><td class="mono">${esc(k.key)}</td><td>${esc(k.plan)}</td><td>${dday(k.expires_at)}</td><td>${k.revoked?'<span class="pill bad">révoquée</span>':'<span class="pill ok">active</span>'}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">aucune</td></tr>'}</tbody></table></div>
+  <h3>Activité récente</h3><div class="timeline">${d.events.map(e=>`<div><span class="mono muted">${dt(e.at)}</span> · ${esc(e.type)}${e.detail?" — "+esc(e.detail):""}</div>`).join("")||'<div class="empty">aucun évènement</div>'}</div>
+  <div class="row" style="margin-top:16px"><button class="btn sm" onclick="dm('${id}')">DM</button><button class="btn sm" onclick="grant('${id}')">offrir Pro</button><button class="btn sm" onclick="role('${id}','add')">rôle Pro+</button><button class="btn sm" onclick="msg('${id}')">alerte app</button><button class="btn sm" onclick="forgetEmail('${id}')">effacer email</button><button class="btn sm bad" onclick="ban('${id}',1);closeModal()">bannir (app)</button><button class="btn sm bad" onclick="discordBan('${id}')">bannir Discord</button><button class="btn sm bad" onclick="blacklistUser('${id}')">blacklist</button></div>`;
+  $("modal").classList.remove("hide");}
+function closeModal(){$("modal").classList.add("hide");}
+$("modal").addEventListener("click",(e)=>{if(e.target===$("modal"))closeModal();});
+
+// blacklist / logs / flags / settings
+async function loadBl(){const b=await api("/admin/api/blacklist");if(!b)return;$("bl-rows").innerHTML=b.length?b.map(x=>`<tr><td class="mono" title="${esc(x.hwid)}">${esc((x.hwid||"").slice(0,22))}…</td><td class="mono">${esc(x.discord_id||"—")}</td><td>${esc(x.reason||"")}</td><td>${dt(x.at)}</td><td><button class="btn sm" onclick="rmBl('${esc(x.hwid)}')">retirer</button></td></tr>`).join(""):'<tr><td colspan="5" class="empty">Aucun.</td></tr>';applySearch();}
+async function addBl(){const hwid=$("bl-hwid").value.trim();if(!hwid){toast("HWID requis","bad");return;}await api("/admin/api/blacklist",{hwid,reason:$("bl-reason").value||"manuel"});toast("Blacklisté");$("bl-hwid").value="";loadBl();}
+async function rmBl(hwid){await api("/admin/api/unblacklist",{hwid});toast("Retiré");loadBl();}
+async function loadLogs(){const l=await api("/admin/api/logs");if(!l)return;$("l-rows").innerHTML=l.length?l.map(x=>`<tr><td>${dt(x.at)}</td><td><span class="pill info">${esc(x.type)}</span></td><td class="mono">${esc(x.discord_id||"—")}</td><td>${esc(x.detail||"")}</td><td class="mono">${esc(x.ip||"")}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">Aucun log.</td></tr>';applySearch();}
+async function loadFlags(){const f=await api("/admin/api/flags");if(!f)return;$("f-rows").innerHTML=f.map(x=>`<tr><td class="mono">${esc(x.name)}</td><td><input type="checkbox" ${x.enabled?"checked":""} onchange="flag('${esc(x.name)}',this.checked,null)"></td><td><select onchange="flag('${esc(x.name)}',${x.enabled?1:0},this.value)"><option value="free" ${x.scope==="free"?"selected":""}>gratuit</option><option value="pro" ${x.scope==="pro"?"selected":""}>Pro</option></select></td></tr>`).join("");}
+async function flag(name,enabled,scope){await api("/admin/api/flags",{name,enabled,scope});toast("Flag mis à jour");}
+async function loadSettings(){const s=await api("/admin/api/settings");if(!s)return;$("set-announce").value=s.announcement||"";$("set-version").value=s.latest_version||"";$("set-download").value=s.download_url||"";}
+async function saveSettings(){await api("/admin/api/settings",{announcement:$("set-announce").value,latest_version:$("set-version").value,download_url:$("set-download").value});toast("Enregistré","ok");}
+async function broadcast(channel){const message=$("bc-msg").value.trim();if(!message){toast("Message vide","bad");return;}if(!confirm(`Envoyer à TOUS (${channel}) ?`))return;const r=await api("/admin/api/broadcast",{message,channel});if(r)toast(`Diffusé à ${r.count} compte(s)`,"ok");}
+
+// listeners
+$("b-genkey").addEventListener("click",genKeys);
+$("b-copyfree").addEventListener("click",copyFree);
+$("b-export").addEventListener("click",exportEmails);
+$("b-mrefresh").addEventListener("click",loadMembers);
+$("b-bladd").addEventListener("click",addBl);
+$("b-logs").addEventListener("click",loadLogs);
+$("b-savesettings").addEventListener("click",saveSettings);
+$("b-bcapp").addEventListener("click",()=>broadcast("app"));
+$("b-bcdm").addEventListener("click",()=>broadcast("dm"));
+$("b-backup").addEventListener("click",()=>{location.href="/admin/api/backup";});
+$("b-tkrefresh").addEventListener("click",loadTickets);
+
+// SSE temps réel
+try{const es=new EventSource("/admin/api/alerts/stream");es.onmessage=()=>{loadAlerts();loadStats();loadTickets();const l=document.querySelector(".live i");if(l){l.style.opacity=.3;setTimeout(()=>l.style.opacity=1,300);}};}catch(e){}
+$("dash").classList.add("enter");
+loadStats();loadAlerts();loadTickets();setInterval(loadStats,30000);
+</script>
+</body>
+</html>
