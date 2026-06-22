@@ -196,7 +196,13 @@ fn load(name: &str) -> Result<String> { Ok(std::fs::read_to_string(dir().join(na
 fn clear(name: &str) { let _ = std::fs::remove_file(dir().join(name)); }
 
 fn open_browser(url: &str) {
-    let _ = Command::new("cmd").args(["/C", "start", "", url]).spawn();
+    // NE PAS passer par `cmd /C start` : cmd.exe interprète le `&` de l'URL comme un
+    // séparateur de commandes et TRONQUE l'URL après client_id — Discord affichait
+    // alors l'écran d'installation au lieu de la connexion. rundll32 reçoit l'URL
+    // comme argument unique, sans aucune interprétation shell (le `&` est préservé).
+    let _ = Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn();
 }
 /// Ouvre une URL arbitraire (ex. lien de mise à jour) dans le navigateur.
 pub fn open_url(url: &str) { open_browser(url); }
