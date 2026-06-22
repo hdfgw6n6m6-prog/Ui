@@ -31,7 +31,7 @@ export default function ScoreGauge({ value = 0, color = "var(--ok)", tier = "" }
           const on = i < lit;
           return (
             <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke={on ? color : "rgba(255,255,255,0.08)"}
+              stroke={on ? color : "var(--seg-off)"}
               strokeWidth={i % 5 === 0 ? 4 : 2.5}
               strokeLinecap="round"
               style={{ transition: `stroke .4s ${i * 12}ms` }} />

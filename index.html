@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PulseBoost</title>
+    <!-- Applique le thème enregistré AVANT le rendu (évite tout flash). -->
+    <script>try{var t=localStorage.getItem('pb_theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
     <!-- Polices à embarquer localement en prod (pas de CDN dans un .exe offline) -->
     <link rel="stylesheet" href="/src/styles.css" />
   </head>

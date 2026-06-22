@@ -135,7 +135,7 @@ for (const col of ["email TEXT", "email_verified INTEGER"]) {
 // Réglages par défaut (modifiables dans le panel).
 const getSetting = (n, d = "") => db.prepare("SELECT value FROM settings WHERE name=?").get(n)?.value ?? d;
 const setSetting = (n, v) => db.prepare("INSERT INTO settings (name,value) VALUES (?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value").run(n, String(v ?? ""));
-for (const [n, v] of [["announcement", ""], ["latest_version", ""], ["download_url", ""]]) {
+for (const [n, v] of [["announcement", ""], ["latest_version", ""], ["download_url", ""], ["shop_url", ""]]) {
   db.prepare("INSERT OR IGNORE INTO settings (name,value) VALUES (?,?)").run(n, v);
 }
 for (const [n, s] of [["ai_analysis","pro"],["ai_chat","pro"],["network_tweaks","pro"],["game_profiles","pro"],["monitoring","free"]]) {
@@ -487,6 +487,8 @@ app.get("/v1/announcement", (req, res) => res.json({
   message: getSetting("announcement"),
   version: getSetting("latest_version"),
   download_url: getSetting("download_url"),
+  // Boutique externe (SellAuth) : l'app y redirige pour acheter une clé. Pas de Stripe.
+  shop_url: process.env.SHOP_URL ?? getSetting("shop_url", ""),
 }));
 
 
@@ -713,10 +715,11 @@ app.post("/admin/api/flags", admin, (req, res) => {
 
 // Réglages (annonce in-app, version, lien de téléchargement)
 app.get("/admin/api/settings", admin, (req, res) => res.json({
-  announcement: getSetting("announcement"), latest_version: getSetting("latest_version"), download_url: getSetting("download_url"),
+  announcement: getSetting("announcement"), latest_version: getSetting("latest_version"),
+  download_url: getSetting("download_url"), shop_url: getSetting("shop_url"),
 }));
 app.post("/admin/api/settings", admin, (req, res) => {
-  for (const k of ["announcement", "latest_version", "download_url"]) if (k in (req.body ?? {})) setSetting(k, req.body[k]);
+  for (const k of ["announcement", "latest_version", "download_url", "shop_url"]) if (k in (req.body ?? {})) setSetting(k, req.body[k]);
   res.json({ ok: true });
 });
 

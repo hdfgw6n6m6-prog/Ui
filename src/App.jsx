@@ -17,6 +17,7 @@ import ScanMiniGame from "./components/ScanMiniGame.jsx";
 import {
   IconPulse, IconSliders, IconShield, IconBolt, IconCheck, IconUndo,
   IconGem, IconWarn, IconDiscord, IconGauge, IconChat, IconSend, IconCog,
+  IconSun, IconMoon,
 } from "./components/Icons.jsx";
 
 const TIER_COLOR = { vert: "var(--ok)", orange: "var(--warn)", rouge: "var(--bad)" };
@@ -128,6 +129,7 @@ export default function App() {
   const [prefs, setPrefs] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [rekt, setRekt] = useState(false);
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute("data-theme") || localStorage.getItem("pb_theme") || "dark");
   const isPro = pro;
   const toastTimer = useRef(null);
   const lastAutoGame = useRef(null);
@@ -144,6 +146,13 @@ export default function App() {
   const savePrefs = async (patch) => {
     try { setPrefs(await invoke("set_prefs", { prefs: patch })); } catch (e) { notify(String(e)); }
   };
+
+  // Thème clair (Apple) / sombre — appliqué sur <html> et persisté.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("pb_theme", theme); } catch {}
+  }, [theme]);
+  const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
   const refreshTweaks = async () => { try { setTweaks(await invoke("list_tweaks")); } catch {} };
 
@@ -511,7 +520,7 @@ export default function App() {
 
   // --- MUR DE CONNEXION : l'app est inutilisable sans login Discord ---
   if (!logged) {
-    return <LoginScreen onLogin={loginDiscord} busy={busy} />;
+    return <LoginScreen onLogin={loginDiscord} busy={busy} theme={theme} onToggleTheme={toggleTheme} shopUrl={announce?.shop_url} />;
   }
 
   return (
@@ -543,6 +552,7 @@ export default function App() {
             <div className="chip-stat"><span>CPU</span><b className={cpuClass}>{Math.round(live.cpu_pct ?? 0)}%</b></div>
             <div className="chip-stat"><span>RAM</span><b className={ramClass}>{Math.round(live.ram_pct ?? 0)}%</b></div>
             {live.cpu_temp_c != null && <div className="chip-stat"><span>Temp</span><b>{Math.round(live.cpu_temp_c)}°</b></div>}
+            <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
 
@@ -734,6 +744,11 @@ export default function App() {
                             {busy ? "Activation…" : "Activer"}
                           </button>
                         </div>
+                        {announce?.shop_url && (
+                          <button className="btn shop-cta" onClick={() => invoke("open_url", { url: announce.shop_url }).catch(() => {})}>
+                            <IconGem width={16} height={16} /> Pas encore de clé ? Obtenir une clé Pro
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -1009,10 +1024,25 @@ function TrustStrip() {
   );
 }
 
+// Bascule thème clair (Apple) / sombre.
+function ThemeToggle({ theme, onToggle }) {
+  return (
+    <button
+      className="theme-toggle"
+      onClick={onToggle}
+      title={theme === "light" ? "Passer en mode sombre" : "Passer en mode clair"}
+      aria-label="Changer de thème"
+    >
+      {theme === "light" ? <IconMoon width={16} height={16} /> : <IconSun width={16} height={16} />}
+    </button>
+  );
+}
+
 // MUR DE CONNEXION : Discord obligatoire pour accéder à l'application.
-function LoginScreen({ onLogin, busy }) {
+function LoginScreen({ onLogin, busy, theme, onToggleTheme, shopUrl }) {
   return (
     <div className="login-screen">
+      <div className="login-topbar"><ThemeToggle theme={theme} onToggle={onToggleTheme} /></div>
       <div className="login-card">
         <div className="login-brand"><span className="logo-pulse" /> PulseBoost</div>
         <h1>Connecte-toi pour commencer</h1>
@@ -1028,6 +1058,11 @@ function LoginScreen({ onLogin, busy }) {
           <li><IconUndo width={16} height={16} /> Chaque modification reste réversible en 1 clic.</li>
           <li><IconCheck width={16} height={16} /> Aucun mot de passe à saisir : tout passe par Discord.</li>
         </ul>
+        {shopUrl && (
+          <p className="login-foot muted tiny">
+            Pas encore de clé ? <a href={shopUrl} target="_blank" rel="noreferrer" className="login-link">Obtenir une clé Pro</a>
+          </p>
+        )}
         <p className="muted tiny login-foot">
           Une fenêtre Discord s'ouvre dans ton navigateur. Autorise l'accès, puis reviens ici — la connexion se fait automatiquement.
         </p>

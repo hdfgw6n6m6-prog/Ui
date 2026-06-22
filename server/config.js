@@ -12,6 +12,7 @@ const config = {
   PORT: "8787",
   PUBLIC_URL: "http://localhost:8787",      // URL publique (HTTPS en prod) du serveur
   DATA_DIR: "./data",                        // dossier PERSISTANT pour la base SQLite
+  SHOP_URL: "",                              // boutique SellAuth (l'app y redirige pour acheter une clé)
 
   // --- Secrets ---
   SESSION_SECRET: "",                         // node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"

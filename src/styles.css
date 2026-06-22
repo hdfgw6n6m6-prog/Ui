@@ -26,7 +26,88 @@
   --radius-sm: 11px;
   --shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
   --grad-pro: linear-gradient(100deg, var(--pulse), var(--data));
+  --seg-off: rgba(255, 255, 255, 0.08);   /* segments éteints de la jauge */
+  --surface: rgba(255, 255, 255, 0.05);   /* boutons / champs */
+  --surface-hover: rgba(255, 255, 255, 0.09);
+  --track: rgba(255, 255, 255, 0.12);     /* pistes (toggle, progress) */
 }
+
+/* ============================================================
+   THÈME CLAIR (façon Apple) — activé via <html data-theme="light">
+   ============================================================ */
+[data-theme="light"] {
+  --bg: #f5f5f7;
+  --bg-2: #ececf0;
+  --panel: rgba(255, 255, 255, 0.72);
+  --panel-solid: #ffffff;
+  --panel-2: rgba(0, 0, 0, 0.035);
+  --line: rgba(0, 0, 0, 0.10);
+  --line-soft: rgba(0, 0, 0, 0.06);
+  --pulse: #7c3aed;
+  --pulse-2: #6d28d9;
+  --data: #0a84ff;          /* bleu Apple pour les valeurs/données */
+  --ok: #0f9d58;
+  --warn: #c2730a;
+  --bad: #e0245e;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --muted-2: #8a8a8f;
+  --shadow: 0 14px 44px rgba(0, 0, 0, 0.12);
+  --grad-pro: linear-gradient(100deg, #7c3aed, #0a84ff);
+  --seg-off: rgba(0, 0, 0, 0.10);
+  --surface: rgba(0, 0, 0, 0.045);
+  --surface-hover: rgba(0, 0, 0, 0.075);
+  --track: rgba(0, 0, 0, 0.16);
+}
+body { transition: background-color .35s ease, color .35s ease; }
+
+/* Surfaces & couleurs codées en dur -> versions claires lisibles */
+[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 600px at 88% -12%, rgba(124,58,237,0.10), transparent 60%),
+    radial-gradient(800px 500px at -12% 112%, rgba(10,132,255,0.07), transparent 60%),
+    var(--bg);
+}
+[data-theme="light"] body::before {
+  background:
+    radial-gradient(38% 38% at 18% 22%, rgba(124,58,237,.12), transparent 62%),
+    radial-gradient(34% 34% at 82% 28%, rgba(10,132,255,.10), transparent 62%),
+    radial-gradient(40% 40% at 60% 82%, rgba(236,72,153,.06), transparent 62%);
+  opacity: .6;
+}
+[data-theme="light"] .topbar { background: linear-gradient(180deg, var(--bg) 30%, rgba(245,245,247,0.55)); }
+[data-theme="light"] .rail { background: linear-gradient(180deg, rgba(0,0,0,0.02), transparent 40%); }
+[data-theme="light"] .btn { background: var(--surface); }
+[data-theme="light"] .btn:hover:not(:disabled) { background: var(--surface-hover); }
+[data-theme="light"] .btn.ghost { background: transparent; }
+[data-theme="light"] .chat-input input,
+[data-theme="light"] .key-field,
+[data-theme="light"] .churn-comment { background: var(--surface); }
+[data-theme="light"] .chip { background: var(--surface); }
+[data-theme="light"] .ptag { background: var(--surface); }
+[data-theme="light"] .slider { background: var(--track); }
+[data-theme="light"] .progress { background: var(--track); }
+[data-theme="light"] .skeleton { background: var(--surface); }
+[data-theme="light"] .skeleton::after { background: linear-gradient(90deg, transparent, rgba(0,0,0,.05), transparent); }
+[data-theme="light"] .onb-dots span { background: var(--track); }
+[data-theme="light"] .onb-dots span.on { background: var(--pulse); }
+[data-theme="light"] .toast { background: var(--panel-solid); }
+[data-theme="light"] .trust { background: rgba(15,157,88,0.08); border-color: rgba(15,157,88,0.22); }
+[data-theme="light"] .trust span { color: #0c7a43; }
+[data-theme="light"] .badge-chip { color: #8a4d0a; background: rgba(194,115,10,0.12); border-color: rgba(194,115,10,0.3); }
+[data-theme="light"] .fake-boost { background: radial-gradient(circle at center, rgba(124,58,237,0.12), rgba(245,245,247,0.6)); }
+[data-theme="light"] .rekt-flash { background: radial-gradient(circle, rgba(224,36,94,0.18), rgba(245,245,247,0.55)); }
+
+/* Bascule de thème + éléments de l'écran de connexion */
+.theme-toggle { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+  border: 1px solid var(--line-soft); background: var(--surface); color: var(--text); cursor: pointer;
+  transition: background .15s, transform .1s; flex: 0 0 auto; }
+.theme-toggle:hover { background: var(--surface-hover); }
+.theme-toggle:active { transform: scale(.92); }
+.login-topbar { position: absolute; top: 20px; right: 22px; z-index: 2; }
+.login-link { color: var(--pulse-2); text-decoration: none; font-weight: 600; }
+.login-link:hover { text-decoration: underline; }
+.shop-cta { width: 100%; justify-content: center; margin-top: 2px; }
 
 * { box-sizing: border-box; margin: 0; }
 html, body, #root { height: 100%; }
