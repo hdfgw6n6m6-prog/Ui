@@ -187,13 +187,41 @@ async function discordExchange(code, redirectUri) {
     }),
   });
   const tok = await r.json();
-  return fetch("https://discord.com/api/users/@me", { headers: { Authorization: `Bearer ${tok.access_token}` } }).then((x) => x.json());
+  if (!tok.access_token) {
+    const e = new Error("token_exchange_failed");
+    e.detail = tok; // ex. { error: "invalid_client" } -> mauvais CLIENT_SECRET / redirect_uri
+    throw e;
+  }
+  const u = await fetch("https://discord.com/api/users/@me", { headers: { Authorization: `Bearer ${tok.access_token}` } }).then((x) => x.json());
+  if (!u.id) { const e = new Error("profile_failed"); e.detail = u; throw e; }
+  return u;
+}
+
+// Page HTML stylée (claire, façon Apple) pour les retours OAuth de l'app.
+function oauthPage(kind, title, msg) {
+  const icon = kind === "ok" ? "✅" : kind === "error" ? "⚠️" : "🔐";
+  const color = kind === "error" ? "#e0245e" : "#1d1d1f";
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PulseBoost</title></head>
+<body style="margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f5f5f7;color:#1d1d1f;display:flex;align-items:center;justify-content:center;min-height:100vh">
+<div style="text-align:center;background:#fff;padding:44px 52px;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.12);max-width:430px">
+<div style="font-size:42px">${icon}</div>
+<h2 style="margin:14px 0 8px;color:${color}">${title}</h2>
+<p style="color:#6e6e73;margin:0;line-height:1.55">${msg}</p>
+</div></body></html>`;
 }
 
 // Callback de l'APP desktop -> redirige vers le loopback local de l'app.
 app.get("/auth/callback", async (req, res) => {
+  // Accès DIRECT (sans code/state) : ce n'est pas une erreur, juste une page technique.
+  if (!req.query.code || !req.query.state) {
+    return res.status(200).send(oauthPage("info", "Page de connexion PulseBoost",
+      "Cette page s'ouvre automatiquement pendant la connexion Discord. Reviens dans l'application et clique sur « Se connecter avec Discord »."));
+  }
+  let st;
+  try { st = JSON.parse(Buffer.from(req.query.state, "base64url").toString()); } // { port, nonce }
+  catch { return res.status(400).send(oauthPage("error", "Lien invalide", "Le paramètre d'état est illisible. Relance la connexion depuis l'application.")); }
+
   try {
-    const st = JSON.parse(Buffer.from(req.query.state, "base64url").toString()); // { port, nonce }
     const u = await discordExchange(req.query.code, `${PUBLIC_URL}/auth/callback`);
     // Email capturé via le scope `email` (consenti). Conservé même si l'utilisateur
     // retire l'app plus tard (Discord ne le supprime pas chez nous).
@@ -202,12 +230,21 @@ app.get("/auth/callback", async (req, res) => {
                 ON CONFLICT(discord_id) DO UPDATE SET username=excluded.username, avatar=excluded.avatar,
                   email=COALESCE(excluded.email, users.email), email_verified=excluded.email_verified, last_login=datetime('now')`)
       .run(u.id, u.username, u.avatar ?? null, email, u.verified ? 1 : 0);
-    if (db.prepare("SELECT banned FROM users WHERE discord_id=?").get(u.id)?.banned) return res.send("<h2>Compte banni.</h2>");
+    if (db.prepare("SELECT banned FROM users WHERE discord_id=?").get(u.id)?.banned)
+      return res.status(403).send(oauthPage("error", "Compte suspendu", "Ton accès PulseBoost a été suspendu. Contacte le support sur le Discord."));
     log("login", { discord_id: u.id, ip: req.ip });
     if (email) log("email", { discord_id: u.id, ip: req.ip, detail: email });
     const session = makeSession({ kind: "app", id: u.id, name: u.username });
-    res.redirect(`http://127.0.0.1:${st.port}/?session=${encodeURIComponent(session)}&name=${encodeURIComponent(u.username)}`);
-  } catch (e) { console.error(e); res.status(500).send("Erreur OAuth"); }
+    if (!st.port) // pas de port loopback (cas limite) : on confirme quand même
+      return res.send(oauthPage("ok", "Connexion réussie", "Tu peux fermer cet onglet et revenir dans PulseBoost."));
+    return res.redirect(`http://127.0.0.1:${st.port}/?session=${encodeURIComponent(session)}&name=${encodeURIComponent(u.username)}`);
+  } catch (e) {
+    console.error("[oauth callback]", e.message, e.detail ? JSON.stringify(e.detail).slice(0, 200) : "");
+    const msg = e.message === "token_exchange_failed"
+      ? "Discord a refusé l'échange. Vérifie côté serveur le DISCORD_CLIENT_SECRET et que l'URL https://zeubi.xyz/auth/callback est bien enregistrée dans les redirections OAuth2 de l'application Discord."
+      : "Une erreur est survenue pendant la connexion. Réessaie depuis l'application.";
+    res.status(502).send(oauthPage("error", "Connexion impossible", msg));
+  }
 });
 
 // --- REDEEM : lier une cle au compte Discord ---
