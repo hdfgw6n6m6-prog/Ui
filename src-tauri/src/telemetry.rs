@@ -6,7 +6,7 @@
 
 use serde_json::{json, Value};
 
-const SERVER: &str = "https://api.tondomaine.com";
+const SERVER: &str = "https://zeubi.xyz";
 
 fn dir() -> std::path::PathBuf {
     let d = dirs::data_dir().unwrap_or_default().join("PulseBoost");

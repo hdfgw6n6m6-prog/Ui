@@ -14,10 +14,10 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process::Command;
 
-const SERVER: &str = "https://api.tondomaine.com"; // <-- ton serveur
-const DISCORD_CLIENT_ID: &str = "TON_CLIENT_ID";   // <-- application Discord
+const SERVER: &str = "https://zeubi.xyz"; // <-- ton serveur
+const DISCORD_CLIENT_ID: &str = "1515481136145629214";   // <-- application Discord
 // Cle PUBLIQUE Ed25519 (hex, 32 octets) depuis `node keygen.js`. Publique = OK dans le binaire.
-const VERIFY_KEY_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+const VERIFY_KEY_HEX: &str = "86b59b5300b57456addc2a1c0eabc7268bdffb76b32b4e79d609df2666d13836";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Claims {

@@ -9,7 +9,7 @@ use crate::license;
 use anyhow::Result;
 use serde_json::{json, Value};
 
-const SERVER: &str = "https://api.tondomaine.com"; // <-- meme valeur que dans license.rs
+const SERVER: &str = "https://zeubi.xyz"; // <-- meme valeur que dans license.rs
 
 pub async fn analyze(scan: Value, locale: &str) -> Result<Value> {
     let session = license::session_token().unwrap_or_default();
