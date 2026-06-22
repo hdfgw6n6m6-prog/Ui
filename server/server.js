@@ -59,6 +59,12 @@ function rateLimit(key, max, windowMs) {
 }
 setInterval(() => { const now = Date.now(); for (const [k, b] of rateBuckets) if (now > b.reset) rateBuckets.delete(k); }, 5 * 60000);
 const ADMIN_IDS = (process.env.ADMIN_DISCORD_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+// RBAC multi-niveaux : owner > mod > support. Variables d'env séparées par rôle.
+const tierIds = (n) => (process.env[n] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const ADMIN_OWNER_IDS = tierIds("ADMIN_OWNER_IDS");
+const ADMIN_MOD_IDS = tierIds("ADMIN_MOD_IDS");
+const ADMIN_SUPPORT_IDS = tierIds("ADMIN_SUPPORT_IDS");
+const ROLES_CONFIGURED = !!(ADMIN_OWNER_IDS.length || ADMIN_MOD_IDS.length || ADMIN_SUPPORT_IDS.length);
 
 // --- Plans (durée par plan) ---
 const PLAN_DAYS = { weekly: 7, monthly: 30, quarterly: 90, lifetime: 0 };
@@ -116,6 +122,11 @@ db.exec(`
     edited INTEGER DEFAULT 0, original_content TEXT, created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_tmsg_ticket ON ticket_messages(ticket_id);
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id TEXT, admin_name TEXT, role TEXT,
+    action TEXT, target TEXT, detail TEXT, ip TEXT, at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_logs(at);
 `);
 // Migration idempotente : colonnes email (collectées via OAuth scope `email`).
 for (const col of ["email TEXT", "email_verified INTEGER"]) {
@@ -374,6 +385,11 @@ app.post("/v1/analyze", async (req, res) => {
   if (!req.body.scan) return res.status(400).json({ error: "scan manquant" });
   if (!process.env.GEMINI_API_KEY) return res.status(502).json({ error: "IA non configuree (GEMINI_API_KEY)" });
 
+  // Mode Roast : on chambre gentiment, sans jamais inventer de chiffres.
+  const analyzePrompt = req.body.roast_mode
+    ? AI_SYSTEM_PROMPT + `\nMODE ROAST : dans "resume", chambre gentiment l'utilisateur (humour, jamais méchant ni insultant) tout en restant 100% factuel et honnête sur les chiffres.`
+    : AI_SYSTEM_PROMPT;
+
   try {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
@@ -381,7 +397,7 @@ app.post("/v1/analyze", async (req, res) => {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: AI_SYSTEM_PROMPT }] },
+          system_instruction: { parts: [{ text: analyzePrompt }] },
           contents: [{ role: "user", parts: [{ text: `Locale: ${req.body.locale ?? "fr"}\nScan PC: ${JSON.stringify(req.body.scan)}` }] }],
           generationConfig: { temperature: 0.4, maxOutputTokens: 1200, responseMimeType: "application/json" },
         }),
@@ -432,7 +448,10 @@ app.post("/v1/chat", async (req, res) => {
   }));
   if (!history.length) return res.status(400).json({ error: "message manquant" });
   const context = JSON.stringify(req.body.context ?? {});
-  const sys = `${CHAT_SYSTEM}\nLocale: ${req.body.locale ?? "fr"}\nCONTEXTE UTILISATEUR/APP: ${context}`;
+  let sys = `${CHAT_SYSTEM}\nLocale: ${req.body.locale ?? "fr"}\nCONTEXTE UTILISATEUR/APP: ${context}`;
+  // Ton Try Hard / mode Roast injectés selon les préférences (envoyées par l'app).
+  if (req.body.tone === "tryhard") sys += `\nTON TRY HARD : style compétitif et cash, vocabulaire gaming (GG, EZ, clutch, tryhard), mais reste utile, précis et honnête.`;
+  if (req.body.roast_mode) sys += `\nMODE ROAST : chambre gentiment l'utilisateur dans "reply", sans jamais être insultant ni décourageant.`;
 
   try {
     const r = await fetch(
@@ -538,6 +557,60 @@ function admin(req, res, next) {
   req.admin = s; next();
 }
 
+// --- RBAC : rôle de l'admin courant (owner > mod > support) ---
+const ROLE_RANK = { support: 1, mod: 2, owner: 3 };
+function adminRole(s) {
+  if (!s) return null;
+  if (s.id === "local") return "owner";            // login mot de passe = accès total
+  if (ADMIN_OWNER_IDS.includes(s.id)) return "owner";
+  if (ADMIN_MOD_IDS.includes(s.id)) return "mod";
+  if (ADMIN_SUPPORT_IDS.includes(s.id)) return "support";
+  return ROLES_CONFIGURED ? "support" : "owner";   // admin legacy : owner si aucun tier défini
+}
+function requireRole(role) {
+  return (req, res, next) => {
+    const r = adminRole(req.admin);
+    if (!r || ROLE_RANK[r] < ROLE_RANK[role]) return res.status(403).json({ error: `Action réservée au rôle ${role}.` });
+    next();
+  };
+}
+
+// --- Journal d'audit des actions admin sensibles ---
+function audit(req, action, target = null, detail = null) {
+  try {
+    const s = req.admin || {};
+    db.prepare("INSERT INTO audit_logs (admin_id,admin_name,role,action,target,detail,ip) VALUES (?,?,?,?,?,?,?)")
+      .run(s.id ?? null, s.name ?? null, adminRole(s), action, target, detail, req.ip ?? null);
+  } catch {}
+}
+
+// Rôle de l'admin courant (le panel adapte ses boutons selon le rôle).
+app.get("/admin/api/me", admin, (req, res) => res.json({ id: req.admin.id, name: req.admin.name, role: adminRole(req.admin) }));
+
+// Journal d'audit (recherche globale optionnelle via ?q=).
+app.get("/admin/api/audit", admin, (req, res) => {
+  const q = String(req.query.q ?? "").trim();
+  if (q) {
+    const like = `%${q}%`;
+    return res.json(db.prepare(
+      `SELECT * FROM audit_logs WHERE admin_id LIKE ? OR admin_name LIKE ? OR action LIKE ? OR target LIKE ? OR detail LIKE ?
+       ORDER BY id DESC LIMIT 500`).all(like, like, like, like, like));
+  }
+  res.json(db.prepare("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 500").all());
+});
+
+// Impersonation (owner only) : session app de 1h pour debugger en tant qu'utilisateur. Tout est journalisé.
+app.post("/admin/api/impersonate", admin, requireRole("owner"), (req, res) => {
+  const { discord_id } = req.body ?? {};
+  if (!discord_id) return res.status(400).json({ error: "discord_id requis" });
+  const u = db.prepare("SELECT username FROM users WHERE discord_id=?").get(discord_id);
+  const session = makeSession({ kind: "app", id: discord_id, name: u?.username ?? "impersonated", impersonated_by: req.admin.id }, 60 * 60000);
+  audit(req, "impersonate", discord_id, "session app 1h");
+  log("impersonate", { discord_id: req.admin.id, detail: `-> ${discord_id}` });
+  alert("warn", `Impersonation de <@${discord_id}> par ${req.admin.name}`, discord_id);
+  res.json({ ok: true, session, expires_in: 3600 });
+});
+
 app.get("/admin/api/stats", admin, (req, res) => res.json({
   users: db.prepare("SELECT COUNT(*) c FROM users").get().c,
   active: db.prepare("SELECT COUNT(*) c FROM keys WHERE revoked=0 AND discord_id IS NOT NULL AND (expires_at IS NULL OR expires_at>datetime('now'))").get().c,
@@ -545,7 +618,7 @@ app.get("/admin/api/stats", admin, (req, res) => res.json({
   alerts: db.prepare("SELECT COUNT(*) c FROM alerts WHERE resolved=0").get().c,
 }));
 app.get("/admin/api/keys", admin, (req, res) => res.json(db.prepare("SELECT * FROM keys ORDER BY created_at DESC LIMIT 500").all()));
-app.post("/admin/api/keys", admin, (req, res) => {
+app.post("/admin/api/keys", admin, requireRole("mod"), (req, res) => {
   const { plan="monthly", days=30, qty=1, note=null } = req.body ?? {};
   const seg = () => crypto.randomBytes(3).toString("hex").toUpperCase().slice(0,4);
   const out = [];
@@ -555,6 +628,7 @@ app.post("/admin/api/keys", admin, (req, res) => {
     out.push(key);
   }
   log("keys_created", { discord_id: req.admin.id, detail: `${out.length}x ${plan}` });
+  audit(req, "keys_created", null, `${out.length}x ${plan}`);
   if (req.body.dm_to) {
     discord.safe(() => discord.dmUser(req.body.dm_to,
       `🔑 Ta/tes cle(s) PulseBoost **${plan}** :\n${out.map(k => "`"+k+"`").join("\n")}\n\nDans l'app : connecte-toi avec Discord puis colle ta cle.`));
@@ -613,6 +687,7 @@ app.post("/admin/api/ban", admin, (req, res) => {
     discord.safe(() => discord.postLog(`🔨 <@${discord_id}> banni + cles revoquees par admin`));
   }
   alert("warn", `Utilisateur ${discord_id} ${banned?"banni + cles revoquees":"debanni"} par admin`, discord_id);
+  audit(req, banned ? "ban_user" : "unban_user", discord_id);
   res.json({ ok: true });
 });
 app.get("/admin/api/logs", admin, (req, res) => res.json(db.prepare("SELECT * FROM logs ORDER BY id DESC LIMIT 300").all()));
@@ -699,6 +774,7 @@ app.post("/admin/api/blacklist_user", admin, (req, res) => {
   discord.safe(() => discord.removeRole(discord_id));
   alert("bad", `Compte <@${discord_id}> blacklisté (${hwids.length} HWID) + clés révoquées`, discord_id);
   log("blacklist_user", { discord_id: req.admin.id, detail: `${discord_id} (${hwids.length} hwid)` });
+  audit(req, "blacklist_user", discord_id, `${hwids.length} HWID`);
   res.json({ ok: true, hwids: hwids.length });
 });
 
@@ -726,6 +802,7 @@ app.post("/admin/api/grant", admin, (req, res) => {
   db.prepare("INSERT OR IGNORE INTO users (discord_id) VALUES (?)").run(discord_id);
   const { key } = grantPro(discord_id, plan, "cadeau admin");
   log("grant", { discord_id: req.admin.id, detail: `${plan} -> ${discord_id}` });
+  audit(req, "grant_pro", discord_id, plan);
   discord.safe(() => discord.dmUser(discord_id, `🎁 Tu as reçu **PulseBoost Pro ${PLAN_LABEL[plan]}** ! C'est déjà activé — relance l'app. Clé : \`${key}\``));
   res.json({ ok: true, key });
 });

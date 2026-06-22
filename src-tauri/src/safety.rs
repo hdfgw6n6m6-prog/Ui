@@ -165,6 +165,20 @@ pub fn read_dword(hive: &str, key: &str, name: &str) -> Option<u32> {
     root.open_subkey(key).ok()?.get_value::<u32, _>(name).ok()
 }
 
+/// Journalise un nettoyage de dossier (cache). Type "cleanup" : tracé pour la
+/// transparence (onglet Sécurité) mais NON réversible — le rollback l'ignore et
+/// conserve l'entrée comme historique.
+pub fn journal_dir_cleanup(journal: &mut Journal, label: &str, path: &str, freed_mb: u64) {
+    journal.record(ChangeEntry {
+        tweak_id: format!("cleanup:{label}"),
+        kind: "cleanup".into(),
+        target: path.into(),
+        previous: json!({ "freed_mb": freed_mb }),
+        applied: json!("contenu supprimé"),
+        at: chrono::Utc::now().to_rfc3339(),
+    });
+}
+
 /// Restaure une entrée registre à sa valeur d'origine.
 pub fn revert_registry(entry: &ChangeEntry) -> Result<()> {
     use winreg::enums::*;

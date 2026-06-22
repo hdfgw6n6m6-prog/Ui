@@ -272,6 +272,66 @@ Technique :
 
 ---
 
+## 9bis. Mise à jour **v8** (cette itération)
+
+Ajouts livrés et **validés** (`cargo check --target x86_64-pc-windows-gnu` OK,
+`npm run build` OK, `npm test` = 67/67).
+
+### Backend Rust (`src-tauri/src/`)
+- **`benchmark.rs`** (nouveau) : échantillonnage CPU/RAM/temp/RAM libre sur 5–60 s
+  (déporté en `spawn_blocking`). Détecte **PresentMon** (bundle ou PATH) et mesure
+  **FPS moyen + 1% low** seulement si un jeu tourne ET PresentMon est dispo — sinon
+  message honnête. Commandes `run_benchmark`, `compare_benchmark` (deltas réels,
+  jamais de FPS inventés ; struct `BenchResult` `Serialize + Deserialize`).
+- **`cleanup.rs`** (nouveau) : scan des caches nettoyables avec estimation Mo (FiveM,
+  GTA V/RAGE, shaders DirectX [Pro], Prefetch [Pro], %TEMP%). Commandes `scan_caches`,
+  `clean_caches` ; **point de restauration avant**, chaque dossier journalisé.
+- **`prefs.rs`** (nouveau) : prefs dans `%LOCALAPPDATA%\PulseBoost\prefs.json` (ton
+  Casual/Try Hard, sons, Fake Boost, Roast IA, onboarding, overlay bêta, compteur de
+  rollbacks + badges). Commandes `get_prefs`, `set_prefs`, `tone_message`,
+  `export_config`, `import_config`, `record_rollback`. Badge auto **« Survivant de 47
+  rollbacks »** à 47.
+- **`score.rs`** : `low_end_report()` — goulots RAM/HDD/GPU faible/CPU<6 cœurs, score
+  matériel 0–100, conseils honnêtes, éligibilité badge *Low End Hero* (non décerné
+  auto). Commande `low_end_report`.
+- **`safety.rs`** : `journal_dir_cleanup()` (entrées type `cleanup`). Le rollback
+  **ignore** ces entrées (non réversibles) et les **conserve** comme historique.
+- **`ai.rs`** : joint `roast_mode` + `tone` (lus dans `prefs`) à `/v1/analyze` et `/v1/chat`.
+- **`license.rs`** : **fix login** — l'`accept()` loopback bloquant est désormais dans
+  `spawn_blocking` + timeout global 180 s (ne gèle plus l'exécuteur Tokio). `session_token()` présent.
+- **`main.rs`** : enregistre toutes les nouvelles commandes ; `rollback_all` appelle
+  `prefs::record_rollback()`.
+
+### Frontend React (`src/`)
+- Composants : `Onboarding`, `BenchmarkPanel`, `LowEndCard`, `CacheCleanup`, `FunPanel`,
+  `ScanMiniGame`. Onglet **Réglages** ajouté.
+- `App.jsx` : chargement des prefs au démarrage, onboarding au 1er lancement, **sons Web
+  Audio** (succès/rollback), messages au **ton Casual/Try Hard**, easter eggs
+  « troll » / « gg ez » → flash **GET REKT** + roast local, export/import de config,
+  `roast_mode`+`tone` dans le contexte du chat, cartes Benchmark/Low-End/Cache sur l'Accueil,
+  mini-jeu pendant scan/actions.
+- `styles.css` : styles benchmark/deltas/fake-boost, low-end, cache, fun panel, badges,
+  onboarding, mini-jeu, flash troll — dans le **même système de design** (thème sombre
+  violet, liquid-glass, tubelight). *(Note : l'app garde son thème ; seul le panel admin
+  est en thème clair Apple.)*
+
+### Serveur (`server/server.js`)
+- **RBAC** owner > mod > support (`ADMIN_OWNER_IDS`/`ADMIN_MOD_IDS`/`ADMIN_SUPPORT_IDS`),
+  `adminRole()` + `requireRole()`. Création de clés réservée à **mod+**. Rétro-compat :
+  sans tier configuré, tout admin legacy = owner ; login mot de passe = owner.
+- **Audit** : table `audit_logs`, `audit()` sur actions sensibles (création de clés, grant,
+  ban, blacklist, impersonation). `GET /admin/api/audit?q=`. `GET /admin/api/me` (rôle courant).
+- **Impersonation** : `POST /admin/api/impersonate` (**owner only**) → session app 1 h, journalisée.
+- **IA** : mode **Roast** injecté dans `/v1/analyze`, ton **Try Hard**/Roast dans `/v1/chat`.
+
+### Hors périmètre (roadmap, non fait)
+Overlay FPS en jeu réel, paiement, signature de code, HPET/timer/standby/kill-overlays,
+`libraryfolders.vdf`, vrais sons de jeux (seulement bips Web Audio), award auto des badges
+*Low End Hero* / *Troll Master*. Le panel admin n'expose pas encore d'UI pour audit/impersonation
+(endpoints prêts et testés).
+
+---
+
 ## 10. Limites honnêtes à rappeler au client final
 
 - « Incrackable » n'existe pas pour un .exe. La protection durable = valeur côté serveur +

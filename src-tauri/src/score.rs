@@ -100,3 +100,82 @@ pub fn estimate_gain(scan: &Value) -> Value {
         "disclaimer": "Estimation locale, variable selon le jeu et la scène. Ce n'est pas une garantie de FPS.",
     })
 }
+
+/// RAPPORT "LOW-END" : détecte les VRAIS goulots matériels (RAM, HDD, GPU faible,
+/// CPU < 6 cœurs), donne un score matériel 0-100 et des conseils HONNÊTES. La
+/// philosophie : sur une config modeste, un upgrade ciblé bat n'importe quel
+/// tweak. On ne ment pas pour vendre du logiciel.
+pub fn low_end_report(scan: &Value) -> Value {
+    let ram = scan["ram"]["total_gb"].as_f64().unwrap_or(16.0);
+    let cores = scan["cpu"]["cores"].as_u64().unwrap_or(8);
+    let disks = scan["disks"].to_string();
+    let gpu = scan["gpu"]["name"].as_str().unwrap_or("").to_lowercase();
+    let has_ssd = disks.contains("SSD") || disks.contains("NVMe");
+    let has_hdd = disks.contains("HDD") || disks.contains("Unspecified");
+
+    let mut score: i32 = 100;
+    let mut bottlenecks: Vec<Value> = vec![];
+    let mut advice: Vec<String> = vec![];
+    let push = |bottlenecks: &mut Vec<Value>, label: &str, detail: &str, sev: &str| {
+        bottlenecks.push(json!({ "label": label, "detail": detail, "severity": sev }));
+    };
+
+    // RAM
+    if ram < 8.0 {
+        score -= 30;
+        push(&mut bottlenecks, "RAM < 8 Go", "Le manque de RAM provoque des freezes et du stutter en jeu. Aucun tweak ne le compense.", "critique");
+        advice.push("Passer à 16 Go de RAM est le meilleur investissement pour ta config.".into());
+    } else if ram < 16.0 {
+        score -= 10;
+        push(&mut bottlenecks, "RAM 8 Go", "8 Go suffisent encore mais les jeux récents + Discord/Chrome saturent vite.", "important");
+        advice.push("16 Go te donneront de la marge si tu joues avec Discord/navigateur ouverts.".into());
+    }
+    // Disque
+    if has_hdd && !has_ssd {
+        score -= 25;
+        push(&mut bottlenecks, "Disque mécanique (HDD)", "Temps de chargement longs et stutter de streaming d'assets (textures).", "important");
+        advice.push("Un SSD changera plus que n'importe quel réglage logiciel. C'est LA priorité.".into());
+    }
+    // CPU cœurs
+    if cores < 4 {
+        score -= 25;
+        push(&mut bottlenecks, "CPU < 4 cœurs", "Beaucoup de jeux modernes rament en dessous de 4 cœurs.", "critique");
+        advice.push("Un CPU 6 cœurs récent débloquerait largement tes FPS.".into());
+    } else if cores < 6 {
+        score -= 12;
+        push(&mut bottlenecks, "CPU 4 cœurs", "Suffisant mais limite sur les jeux CPU-intensifs (FiveM, simulation, BR).", "important");
+        advice.push("Un 6 cœurs aiderait sur les jeux gourmands en CPU comme FiveM.".into());
+    }
+    // GPU intégré / faible (détection par nom, prudente)
+    let integrated = (gpu.contains("intel") && (gpu.contains("hd ") || gpu.contains("uhd") || gpu.contains("iris") || gpu.contains("graphics")))
+        || gpu.contains("vega") && gpu.contains("graphics")
+        || gpu.contains("radeon graphics");
+    if integrated && !gpu.is_empty() {
+        score -= 20;
+        push(&mut bottlenecks, "GPU intégré / faible", "Un GPU intégré plafonne les FPS quels que soient les réglages Windows.", "important");
+        advice.push("Une carte graphique dédiée ferait la plus grosse différence de toutes.".into());
+    }
+
+    let score = score.clamp(0, 100);
+    let is_low_end = score < 60 || ram < 8.0 || (has_hdd && !has_ssd) || cores < 4;
+    let tier = if score >= 75 { "correct" } else if score >= 50 { "modeste" } else { "limité" };
+    let summary = if bottlenecks.is_empty() {
+        "Ta config tient bien la route : les réglages logiciels valent le coup ici."
+    } else if is_low_end {
+        "Config modeste détectée : on optimise ce qui est gratuit, mais un upgrade ciblé fera la vraie différence. PulseBoost reste 100 % honnête là-dessus."
+    } else {
+        "Quelques limites matérielles, mais l'optimisation logicielle reste pertinente sur ta config."
+    };
+
+    json!({
+        "hardware_score": score,
+        "tier": tier,
+        "is_low_end": is_low_end,
+        "bottlenecks": bottlenecks,
+        "advice": advice,
+        // Potentiel de badge "Low End Hero" — JAMAIS décerné automatiquement ici.
+        "low_end_hero_eligible": is_low_end,
+        "summary": summary,
+        "disclaimer": "Diagnostic matériel local et indicatif. On préfère te dire la vérité plutôt que promettre des FPS impossibles.",
+    })
+}

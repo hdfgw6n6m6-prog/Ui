@@ -117,6 +117,19 @@ async function run() {
   ok((await (await jget("/admin/api/user?discord_id=111", cookie)).json()).user.email === null, "email effacé");
   ok((await (await jpost("/admin/api/broadcast", { message: "Coucou", channel: "app" }, cookie)).json()).count >= 1, "broadcast in-app");
 
+  console.log("=== v8 : RBAC, audit, impersonation ===");
+  const me = await (await jget("/admin/api/me", cookie)).json();
+  ok(me.role === "owner", "rôle admin = owner (login mot de passe)");
+  const audit = await (await jget("/admin/api/audit", cookie)).json();
+  ok(Array.isArray(audit) && audit.some((a) => a.action === "keys_created"), "audit log : création de clés tracée");
+  const auditQ = await (await jget("/admin/api/audit?q=keys_created", cookie)).json();
+  ok(Array.isArray(auditQ) && auditQ.every((a) => /keys_created/.test(a.action + a.detail)), "audit : recherche ?q= filtre");
+  const imp = await (await jpost("/admin/api/impersonate", { discord_id: "111" }, cookie)).json();
+  ok(imp.ok === true && imp.session && imp.session.includes("."), "impersonation -> session app 1h");
+  const impEnt = await (await jpost("/v1/entitlement", { session: imp.session, hwid: "imp-hwid" })).json();
+  ok("pro" in impEnt, "session impersonée utilisable sur l'app");
+  ok((await jpost("/admin/api/impersonate", { discord_id: "111" })).status === 401, "impersonate sans cookie -> 401");
+
   console.log("=== TICKETS (support DM) ===");
   // Simule un message reçu par le bot (que le listener gateway aurait inséré).
   const tdb = new Database(path.join(DATA_DIR, "pulseboost.db"));

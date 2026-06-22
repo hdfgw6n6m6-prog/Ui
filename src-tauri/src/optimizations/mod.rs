@@ -399,6 +399,11 @@ pub async fn rollback(journal: &mut Journal) -> Result<Value> {
     let mut reverted = 0u32;
     let mut errors = vec![];
     for entry in journal.entries.iter().rev() {
+        // Les nettoyages de cache ne sont pas réversibles : on les saute (sans les
+        // compter ni les marquer en erreur), ils restent dans l'historique.
+        if entry.kind == "cleanup" {
+            continue;
+        }
         let r: Result<()> = match entry.kind.as_str() {
             "registry" => safety::revert_registry(entry),
             "powercfg" => {
@@ -432,7 +437,8 @@ pub async fn rollback(journal: &mut Journal) -> Result<Value> {
         }
     }
     if errors.is_empty() {
-        journal.entries.clear();
+        // On garde l'historique des nettoyages (non réversibles) pour la transparence.
+        journal.entries.retain(|e| e.kind == "cleanup");
     }
     Ok(json!({ "reverted": reverted, "errors": errors }))
 }

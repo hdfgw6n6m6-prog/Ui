@@ -13,6 +13,7 @@ const SERVER: &str = "https://api.tondomaine.com"; // <-- meme valeur que dans l
 
 pub async fn analyze(scan: Value, locale: &str) -> Result<Value> {
     let session = license::session_token().unwrap_or_default();
+    let prefs = crate::prefs::load();
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{SERVER}/v1/analyze"))
@@ -21,6 +22,9 @@ pub async fn analyze(scan: Value, locale: &str) -> Result<Value> {
             "hwid": license::hwid(),
             "scan": scan,
             "locale": locale,
+            // Ton + mode Roast : le serveur ajuste le prompt Gemini en conséquence.
+            "roast_mode": prefs.roast_mode,
+            "tone": prefs.tone,
             "app_version": env!("CARGO_PKG_VERSION")
         }))
         .timeout(std::time::Duration::from_secs(30))
@@ -37,6 +41,7 @@ pub async fn analyze(scan: Value, locale: &str) -> Result<Value> {
 /// L'action est seulement PROPOSEE : l'app la confirme et l'execute localement.
 pub async fn chat(messages: Value, context: Value) -> Result<Value> {
     let session = license::session_token().unwrap_or_default();
+    let prefs = crate::prefs::load();
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{SERVER}/v1/chat"))
@@ -46,6 +51,8 @@ pub async fn chat(messages: Value, context: Value) -> Result<Value> {
             "messages": messages,
             "context": context,
             "locale": "fr",
+            "roast_mode": prefs.roast_mode,
+            "tone": prefs.tone,
             "app_version": env!("CARGO_PKG_VERSION")
         }))
         .timeout(std::time::Duration::from_secs(30))

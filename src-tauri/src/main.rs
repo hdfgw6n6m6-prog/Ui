@@ -2,10 +2,13 @@
 // Toute modification système passe par safety::Journal (réversibilité garantie).
 
 mod ai;
+mod benchmark;
+mod cleanup;
 mod hardware;
 mod integrity;
 mod license;
 mod optimizations;
+mod prefs;
 mod safety;
 mod score;
 mod telemetry;
@@ -141,6 +144,8 @@ async fn rollback_all() -> Result<Value, String> {
         .await
         .map_err(|e| e.to_string())?;
     journal.save().map_err(|e| e.to_string())?;
+    // Compteur de rollbacks (clin d'œil "Survivant de 47 rollbacks").
+    let _ = prefs::record_rollback();
     Ok(report)
 }
 
@@ -258,6 +263,88 @@ fn change_log() -> Result<Value, String> {
         .map_err(|e| e.to_string())
 }
 
+// ----------------------------------------------------------------------------
+// v8 — Benchmark honnête (CPU/RAM/temp + FPS via PresentMon si dispo)
+// ----------------------------------------------------------------------------
+
+/// Lance un benchmark de `seconds` secondes (borné 5–60). Mesures réelles.
+#[tauri::command]
+async fn run_benchmark(seconds: u64) -> Result<Value, String> {
+    benchmark::run_benchmark(seconds).await.map_err(|e| e.to_string())
+}
+
+/// Compare deux mesures (avant/après). Deltas réels, aucun FPS inventé.
+#[tauri::command]
+fn compare_benchmark(before: Value, after: Value) -> Result<Value, String> {
+    benchmark::compare(before, after).map_err(|e| e.to_string())
+}
+
+// ----------------------------------------------------------------------------
+// v8 — Nettoyage de caches (mesuré, tracé, point de restauration préalable)
+// ----------------------------------------------------------------------------
+
+/// Scanne les caches nettoyables et estime l'espace récupérable.
+#[tauri::command]
+async fn scan_caches() -> Result<Value, String> {
+    let pro = license::current_status().is_some();
+    cleanup::scan_caches(pro).map_err(|e| e.to_string())
+}
+
+/// Nettoie les caches sélectionnés. Point de restauration AVANT, chaque dossier journalisé.
+#[tauri::command]
+async fn clean_caches(ids: Vec<String>) -> Result<Value, String> {
+    if integrity::is_blacklisted() {
+        return Err("Ce poste est bloqué.".into());
+    }
+    let pro = license::current_status().is_some();
+    let mut journal = safety::Journal::load().map_err(|e| e.to_string())?;
+    safety::create_restore_point("PulseBoost — nettoyage des caches")
+        .await
+        .map_err(|e| format!("Point de restauration impossible, rien n'a été supprimé : {e}"))?;
+    let report = cleanup::clean_caches(&ids, pro, &mut journal)
+        .await
+        .map_err(|e| e.to_string())?;
+    journal.save().map_err(|e| e.to_string())?;
+    Ok(report)
+}
+
+// ----------------------------------------------------------------------------
+// v8 — Mode Low-End (diagnostic matériel honnête)
+// ----------------------------------------------------------------------------
+
+/// Rapport "Low-End" : goulots matériels + conseils honnêtes (RAM/SSD/CPU/GPU).
+#[tauri::command]
+async fn low_end_report() -> Result<Value, String> {
+    let scan = hardware::full_scan().await.map_err(|e| e.to_string())?;
+    Ok(score::low_end_report(&scan))
+}
+
+// ----------------------------------------------------------------------------
+// v8 — Préférences, ton, badges, import/export de config
+// ----------------------------------------------------------------------------
+
+#[tauri::command]
+fn get_prefs() -> Value { prefs::get() }
+
+#[tauri::command]
+fn set_prefs(prefs: Value) -> Value { crate::prefs::set(prefs) }
+
+#[tauri::command]
+fn tone_message(kind: String) -> String { prefs::tone_message(&kind) }
+
+#[tauri::command]
+fn record_rollback() -> Value { prefs::record_rollback() }
+
+#[tauri::command]
+async fn export_config() -> Result<Value, String> {
+    prefs::export_config().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_config(config: Value) -> Result<Value, String> {
+    prefs::import_config(config).map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -288,7 +375,18 @@ fn main() {
             license_heartbeat,
             telemetry_consent,
             set_telemetry_consent,
-            submit_churn
+            submit_churn,
+            run_benchmark,
+            compare_benchmark,
+            scan_caches,
+            clean_caches,
+            low_end_report,
+            get_prefs,
+            set_prefs,
+            tone_message,
+            record_rollback,
+            export_config,
+            import_config
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de PulseBoost");

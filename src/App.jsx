@@ -8,9 +8,15 @@ import { invoke } from "@tauri-apps/api/core";
 import ScoreGauge from "./components/ScoreGauge.jsx";
 import LiveMonitor from "./components/LiveMonitor.jsx";
 import QuickMeasure from "./components/QuickMeasure.jsx";
+import Onboarding from "./components/Onboarding.jsx";
+import BenchmarkPanel from "./components/BenchmarkPanel.jsx";
+import LowEndCard from "./components/LowEndCard.jsx";
+import CacheCleanup from "./components/CacheCleanup.jsx";
+import FunPanel from "./components/FunPanel.jsx";
+import ScanMiniGame from "./components/ScanMiniGame.jsx";
 import {
   IconPulse, IconSliders, IconShield, IconBolt, IconCheck, IconUndo,
-  IconGem, IconWarn, IconDiscord, IconGauge, IconChat, IconSend,
+  IconGem, IconWarn, IconDiscord, IconGauge, IconChat, IconSend, IconCog,
 } from "./components/Icons.jsx";
 
 const TIER_COLOR = { vert: "var(--ok)", orange: "var(--warn)", rouge: "var(--bad)" };
@@ -32,13 +38,60 @@ const TABS = [
   ["optims", "Optimisations", IconSliders],
   ["assistant", "Assistant", IconChat],
   ["securite", "Sécurité", IconShield],
+  ["reglages", "Réglages", IconCog],
 ];
 const TAB_SUB = {
   pulse: "Santé, mesure et boost de ton PC",
   optims: "Tweaks réversibles, regroupés par niveau",
   assistant: "Chat IA : règle tes soucis PC et app",
   securite: "Journal complet et retour arrière 1 clic",
+  reglages: "Personnalité de l'app, badges et config",
 };
+
+// Messages adaptés au ton (miroir local de prefs::tone_message côté Rust).
+const TONE_MSG = {
+  casual: {
+    optimize_ok: "C'est fait — ton PC est optimisé. Tout reste réversible, zéro stress. 👍",
+    rollback_ok: "Tout est revenu à l'état d'origine. Ni vu, ni connu. ✨",
+    scan_done: "Analyse terminée — voici l'état réel de ton PC.",
+  },
+  tryhard: {
+    optimize_ok: "Optimisations appliquées. Restore point créé, full réversible. GG — va tryhard. 🔥",
+    rollback_ok: "Rollback complet. PC remis clean, zéro trace. EZ.",
+    scan_done: "Scan fini. Les vrais chiffres, pas du marketing. 📊",
+  },
+};
+
+// Bips Web Audio (aucun asset audio embarqué). Lazy AudioContext.
+let _actx;
+function beep(kind) {
+  try {
+    _actx = _actx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _actx;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    const now = ctx.currentTime;
+    if (kind === "rollback") {
+      o.frequency.setValueAtTime(520, now);
+      o.frequency.exponentialRampToValueAtTime(330, now + 0.16);
+    } else {
+      o.frequency.setValueAtTime(660, now);
+      o.frequency.exponentialRampToValueAtTime(990, now + 0.12);
+    }
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+    o.start(now); o.stop(now + 0.27);
+  } catch {}
+}
+
+const ROASTS = [
+  "« troll » ? Le seul truc à optimiser ici c'est ton sens de l'humour. 😏",
+  "GG EZ ? Ton aim dit le contraire, mais on t'aime quand même. 💀",
+  "Mode Roast : ton PC tourne mieux que tes excuses après une défaite. 🔥",
+  "Détecté : un pro du clutch… dans tes rêves. Allez, on optimise pour de vrai.",
+];
 
 export default function App() {
   const [tab, setTab] = useState("pulse");
@@ -72,6 +125,9 @@ export default function App() {
   const [chat, setChat] = useState([]); // { role: "user"|"assistant", content, action? }
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [prefs, setPrefs] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [rekt, setRekt] = useState(false);
   const isPro = pro;
   const toastTimer = useRef(null);
   const lastAutoGame = useRef(null);
@@ -80,6 +136,13 @@ export default function App() {
     setToast(msg);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 4200);
+  };
+
+  const toneMsg = (kind) => TONE_MSG[prefs?.tone === "tryhard" ? "tryhard" : "casual"]?.[kind] || "";
+  const sound = (kind) => { if (prefs?.sounds) beep(kind); };
+  const refreshPrefs = async () => { try { setPrefs(await invoke("get_prefs")); } catch {} };
+  const savePrefs = async (patch) => {
+    try { setPrefs(await invoke("set_prefs", { prefs: patch })); } catch (e) { notify(String(e)); }
   };
 
   const refreshTweaks = async () => { try { setTweaks(await invoke("list_tweaks")); } catch {} };
@@ -104,6 +167,13 @@ export default function App() {
 
       // Annonce / mise à jour (bandeau in-app, public).
       try { setAnnounce(await invoke("announcement")); } catch {}
+
+      // Préférences locales (ton, sons, badges) + onboarding au 1er lancement.
+      try {
+        const p = await invoke("get_prefs");
+        setPrefs(p);
+        if (!p.onboarding_done) setShowOnboarding(true);
+      } catch {}
 
       // Licence : statut local (offline), login déjà fait ?, puis heartbeat serveur.
       try { setTelemetry(await invoke("telemetry_consent")); } catch {}
@@ -179,8 +249,9 @@ export default function App() {
     try {
       const r = await invoke("apply_tweaks", { ids });
       const n = r.applied?.length ?? 0;
+      if (n) sound("success");
       notify(n
-        ? `${n} optimisation(s) appliquée(s). Point de restauration créé — réversible à tout moment.`
+        ? `${n} optimisation(s) appliquée(s). ${toneMsg("optimize_ok")}`
         : "Aucun changement nécessaire.");
       await refreshTweaks();
       setHealth(await invoke("health_score"));
@@ -202,9 +273,11 @@ export default function App() {
     setBusy(true);
     try {
       const r = await invoke("rollback_all");
-      notify(`${r.reverted} changement(s) annulé(s). Ton PC est revenu à son état d'origine.`);
+      sound("rollback");
+      notify(`${r.reverted} changement(s) annulé(s). ${toneMsg("rollback_ok")}`);
       await refreshTweaks();
       setHealth(await invoke("health_score"));
+      refreshPrefs(); // compteur de rollbacks + éventuel badge mis à jour côté backend
     } catch (e) { notify(String(e)); }
     finally { setBusy(false); }
   };
@@ -275,6 +348,39 @@ export default function App() {
     notify("Merci pour ton retour.");
   };
 
+  const finishOnboarding = async () => {
+    setShowOnboarding(false);
+    await savePrefs({ onboarding_done: true });
+  };
+
+  // Export config : télécharge un .json (prefs + tweaks appliqués).
+  const exportConfig = async () => {
+    try {
+      const cfg = await invoke("export_config");
+      const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "pulseboost-config.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      notify("Config exportée dans pulseboost-config.json.");
+    } catch (e) { notify(String(e)); }
+  };
+
+  // Import config : applique le ton/toggles, puis les tweaks via le chemin sûr (point de restauration).
+  const importConfig = async (file) => {
+    try {
+      const text = await file.text();
+      const cfg = JSON.parse(text);
+      const r = await invoke("import_config", { config: cfg });
+      if (r.prefs) setPrefs(r.prefs);
+      const ids = Array.isArray(r.tweaks) ? r.tweaks : [];
+      const toApply = tweaks.filter((t) => ids.includes(t.id) && !t.applied).map((t) => t.id);
+      if (toApply.length) await applyIds(toApply);
+      else notify("Config importée — réglages à jour.");
+    } catch (e) { notify("Import impossible : " + String(e)); }
+  };
+
   // --- Assistant IA (chat agentique) ---
   // Contexte envoyé à Gemini : profil + état de l'app (lecture). Pas de données
   // sensibles brutes, juste de quoi répondre juste.
@@ -289,6 +395,8 @@ export default function App() {
     jeu_en_cours: activeGame,
     telemetrie: telemetry,
     onglet_actuel: tab,
+    roast_mode: !!prefs?.roast_mode,
+    ton: prefs?.tone || "casual",
   });
 
   const runAction = async (action) => {
@@ -322,6 +430,15 @@ export default function App() {
     setChatInput("");
     const history = [...chat, { role: "user", content: msg }];
     setChat(history);
+    // Easter eggs : « troll » / « gg ez » → roast + flash « GET REKT » (sans appel IA).
+    const low = msg.toLowerCase();
+    if (low.includes("troll") || low.includes("gg ez")) {
+      setRekt(true);
+      setTimeout(() => setRekt(false), 1500);
+      const roast = ROASTS[Math.floor(Math.random() * ROASTS.length)];
+      setTimeout(() => setChat((c) => [...c, { role: "assistant", content: roast, action: null }]), 280);
+      return;
+    }
     setChatBusy(true);
     try {
       const r = await invoke("ai_chat", {
@@ -500,6 +617,12 @@ export default function App() {
                 </div>
               </div>
 
+              <BenchmarkPanel fakeBoost={!!prefs?.fake_boost} notify={notify} />
+
+              <LowEndCard notify={notify} />
+
+              <CacheCleanup isPro={isPro} notify={notify} />
+
               <AdaptiveCard
                 activeGame={activeGame}
                 profile={profile}
@@ -662,11 +785,29 @@ export default function App() {
               </div>
             </>
           )}
+
+          {tab === "reglages" && (
+            <>
+              <FunPanel
+                prefs={prefs}
+                onSet={savePrefs}
+                onExport={exportConfig}
+                onImport={importConfig}
+              />
+              <TrustStrip />
+            </>
+          )}
           </div>
         </div>
       </main>
 
       {churnOpen && <ChurnSurvey onSubmit={sendChurn} onClose={() => setChurnOpen(false)} />}
+      {showOnboarding && <Onboarding onDone={finishOnboarding} />}
+      {rekt && <div className="rekt-flash"><span>GET REKT</span></div>}
+      <ScanMiniGame
+        active={busy || !scan}
+        label={!scan ? "Premier scan en cours…" : "On bosse… clique les orbes !"}
+      />
       {toast && <div className="toast"><IconCheck /> {toast}</div>}
     </div>
   );
