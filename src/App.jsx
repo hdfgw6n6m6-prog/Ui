@@ -114,7 +114,7 @@ export default function App() {
   const [keyInput, setKeyInput] = useState("");
   const [gate, setGate] = useState({ state: "checking", reason: "" });
   const [discordName, setDiscordName] = useState(null);
-  const [logged, setLogged] = useState(false);
+  const [logged, setLogged] = useState(null); // null = inconnu (en cours), false = non connecté, true = connecté
   const [telemetry, setTelemetry] = useState(false);
   const [churnOpen, setChurnOpen] = useState(false);
   const [optView, setOptView] = useState("reco"); // reco | avance
@@ -179,7 +179,7 @@ export default function App() {
       try { setTelemetry(await invoke("telemetry_consent")); } catch {}
       try { setPro((await invoke("license_status")).pro); } catch {}
       try {
-        const li = await invoke("logged_in"); setLogged(li);
+        const li = await invoke("logged_in"); setLogged(!!li);
         if (li) {
           const hb = await invoke("license_heartbeat");
           setPro(!!hb.pro);
@@ -188,7 +188,7 @@ export default function App() {
           if (wasPro && !hb.pro) setChurnOpen(true);
           localStorage.setItem("pb_was_pro", hb.pro ? "1" : "0");
         }
-      } catch {}
+      } catch { setLogged(false); }
     })();
 
     const iv = setInterval(async () => {
@@ -497,6 +497,21 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  // --- Statut de connexion en cours de vérification ---
+  if (logged === null) {
+    return (
+      <div className="boot">
+        <span className="logo-pulse" />
+        <p>Chargement…</p>
+      </div>
+    );
+  }
+
+  // --- MUR DE CONNEXION : l'app est inutilisable sans login Discord ---
+  if (!logged) {
+    return <LoginScreen onLogin={loginDiscord} busy={busy} />;
   }
 
   return (
@@ -990,6 +1005,33 @@ function TrustStrip() {
       <span><IconShield width={15} height={15} /> Point de restauration avant chaque action</span>
       <span><IconUndo width={15} height={15} /> 100 % réversible en 1 clic</span>
       <span><IconCheck width={15} height={15} /> Chaque modification journalisée</span>
+    </div>
+  );
+}
+
+// MUR DE CONNEXION : Discord obligatoire pour accéder à l'application.
+function LoginScreen({ onLogin, busy }) {
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-brand"><span className="logo-pulse" /> PulseBoost</div>
+        <h1>Connecte-toi pour commencer</h1>
+        <p className="login-lead">
+          PulseBoost lie ta licence et tes réglages à ton <b>compte Discord</b> — pas à ton PC.
+          Une seule connexion suffit ; ensuite l'app fonctionne même hors-ligne.
+        </p>
+        <button className="btn discord login-cta" onClick={onLogin} disabled={busy}>
+          <IconDiscord />{busy ? "Ouverture du navigateur…" : "Se connecter avec Discord"}
+        </button>
+        <ul className="login-perks">
+          <li><IconShield width={16} height={16} /> Licence liée à ton compte, transférable sur n'importe quel PC.</li>
+          <li><IconUndo width={16} height={16} /> Chaque modification reste réversible en 1 clic.</li>
+          <li><IconCheck width={16} height={16} /> Aucun mot de passe à saisir : tout passe par Discord.</li>
+        </ul>
+        <p className="muted tiny login-foot">
+          Une fenêtre Discord s'ouvre dans ton navigateur. Autorise l'accès, puis reviens ici — la connexion se fait automatiquement.
+        </p>
+      </div>
     </div>
   );
 }

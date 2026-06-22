@@ -65,56 +65,62 @@ pub async fn discord_login() -> Result<String> {
     open_browser(&auth);
 
     // 3) attendre le retour du navigateur sur 127.0.0.1:port.
-    //    L'accept() est BLOQUANT : on le déporte dans spawn_blocking pour ne PAS
-    //    geler l'exécuteur async Tokio (c'était LE bug du login), avec un timeout
-    //    global pour ne pas rester coincé si l'utilisateur ferme l'onglet.
+    //    L'accept() bloquant est déporté dans spawn_blocking (ne gèle pas Tokio),
+    //    et on BOUCLE : un navigateur peut d'abord ouvrir une connexion parasite
+    //    (favicon, pré-connexion). On répond 200 à chacune et on attend CELLE qui
+    //    porte `?session=`. Un timeout global évite de rester coincé.
     listener.set_nonblocking(false)?;
     let accept = tokio::task::spawn_blocking(move || -> std::io::Result<(String, String)> {
-        let (mut stream, _) = listener.accept()?;
-        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(120)));
-        let mut buf = [0u8; 4096];
-        let n = stream.read(&mut buf)?;
-        let req = String::from_utf8_lossy(&buf[..n]).to_string();
-        let line = req.lines().next().unwrap_or("").to_string();
-        // GET /?session=...&name=... HTTP/1.1
-        let query = line.split_whitespace().nth(1).unwrap_or("").to_string();
-        let mut session = String::new();
-        let mut name = String::new();
-        if let Some(qpos) = query.find('?') {
-            for kv in query[qpos + 1..].split('&') {
-                let mut it = kv.splitn(2, '=');
-                match (it.next(), it.next()) {
-                    (Some("session"), Some(v)) => session = urldecode(v),
-                    (Some("name"), Some(v)) => name = urldecode(v),
-                    _ => {}
+        loop {
+            let (mut stream, _) = listener.accept()?;
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]);
+            let line = req.lines().next().unwrap_or("");
+            // GET /?session=...&name=... HTTP/1.1
+            let path = line.split_whitespace().nth(1).unwrap_or("");
+            let mut session = String::new();
+            let mut name = String::new();
+            if let Some(qpos) = path.find('?') {
+                for kv in path[qpos + 1..].split('&') {
+                    let mut it = kv.splitn(2, '=');
+                    match (it.next(), it.next()) {
+                        (Some("session"), Some(v)) => session = urldecode(v),
+                        (Some("name"), Some(v)) => name = urldecode(v),
+                        _ => {}
+                    }
                 }
             }
+            let html = "<!doctype html><html><head><meta charset='utf-8'><title>PulseBoost</title></head>\
+                        <body style=\"margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f5f5f7;color:#1d1d1f;display:flex;align-items:center;justify-content:center;height:100vh\">\
+                        <div style=\"text-align:center;background:#fff;padding:48px 56px;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.12)\">\
+                        <div style=\"font-size:42px\">✅</div>\
+                        <h2 style=\"margin:14px 0 6px\">Connexion réussie</h2>\
+                        <p style=\"color:#6e6e73;margin:0\">Tu peux fermer cet onglet et revenir dans PulseBoost.</p>\
+                        </div></body></html>";
+            let _ = stream.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type:text/html;charset=utf-8\r\nContent-Length:{}\r\nConnection:close\r\n\r\n{}",
+                    html.len(), html
+                )
+                .as_bytes(),
+            );
+            let _ = stream.flush();
+            // On a la session : terminé. Sinon (requête parasite) on continue d'écouter.
+            if !session.is_empty() {
+                return Ok((session, name));
+            }
         }
-        let html = "<!doctype html><html><head><meta charset='utf-8'><title>PulseBoost</title></head>\
-                    <body style=\"margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f5f5f7;color:#1d1d1f;display:flex;align-items:center;justify-content:center;height:100vh\">\
-                    <div style=\"text-align:center;background:#fff;padding:48px 56px;border-radius:24px;box-shadow:0 20px 60px rgba(0,0,0,.12)\">\
-                    <div style=\"font-size:42px\">✅</div>\
-                    <h2 style=\"margin:14px 0 6px\">Connexion réussie</h2>\
-                    <p style=\"color:#6e6e73;margin:0\">Tu peux fermer cet onglet et revenir dans PulseBoost.</p>\
-                    </div></body></html>";
-        let _ = stream.write_all(
-            format!(
-                "HTTP/1.1 200 OK\r\nContent-Type:text/html;charset=utf-8\r\nContent-Length:{}\r\nConnection:close\r\n\r\n{}",
-                html.len(), html
-            )
-            .as_bytes(),
-        );
-        let _ = stream.flush();
-        Ok((session, name))
     });
 
     // Timeout global : 3 min pour finir l'OAuth dans le navigateur, sinon on rend la main.
     let (session, name) = match tokio::time::timeout(std::time::Duration::from_secs(180), accept).await {
         Ok(join) => join.map_err(|e| anyhow::anyhow!("thread de connexion: {e}"))??,
-        Err(_) => bail!("connexion Discord expirée (aucune réponse). Réessaie."),
+        Err(_) => bail!("Connexion Discord expirée. Vérifie que l'onglet Discord s'est bien ouvert dans ton navigateur, autorise l'accès, puis réessaie."),
     };
 
-    if session.is_empty() { bail!("connexion Discord annulee"); }
+    if session.is_empty() { bail!("Connexion Discord annulée."); }
     store("session", &session)?;
     Ok(name)
 }

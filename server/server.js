@@ -43,7 +43,7 @@ app.use((req, res, next) => {
   res.setHeader("Content-Security-Policy",
     "default-src 'self'; img-src 'self' https://cdn.discordapp.com data:; " +
     "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
-    "connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://api.stripe.com");
+    "connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'");
   if (IS_HTTPS) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   next();
 });
